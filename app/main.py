@@ -310,10 +310,10 @@ async def score_stream_generator():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Basic health check endpoint."""
     return {
         "status": "healthy",
-        "version": "0.1.5",
+        "version": "0.1.16",
         "timestamp": datetime.utcnow().isoformat()
     }
 
