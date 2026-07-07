@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  veklom-vnp-standalone:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: veklom-vnp-standalone:latest
+    container_name: veklom-vnp-standalone-node
+    restart: unless-stopped
+    ports:
+      - "8089:8089"
+    environment:
+      # Connect to the existing Postgres database running in the Coolify network
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@llwfyzhnft87bz6brddiax1z:5432/veklom
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.vnp-standalone-http.entrypoints=http
+      - traefik.http.routers.vnp-standalone-http.rule=Host(`vnp.veklom.com`) && PathPrefix(`/`)
+      - traefik.http.routers.vnp-standalone-https.entrypoints=https
+      - traefik.http.routers.vnp-standalone-https.rule=Host(`vnp.veklom.com`) && PathPrefix(`/`)
+      - traefik.http.routers.vnp-standalone-https.tls=true
+      - traefik.http.routers.vnp-standalone-https.tls.certresolver=letsencrypt
+      - traefik.http.services.vnp-standalone.loadbalancer.server.port=8089
+    networks:
+      - coolify
+
+networks:
+  coolify:
+    external: True
