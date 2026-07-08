@@ -1,4 +1,4 @@
-# Deployment Playbook for VNP Standalone Service (v0.1.5)
+# Deployment Playbook for VNP Standalone Service (VNP Methodology v1.0)
 
 This will deploy the VNP microservice exactly as configured in this repository (running on Port 8089 and pointing to your live Coolify Postgres database).
 

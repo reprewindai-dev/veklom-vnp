@@ -42,7 +42,7 @@ manager = VNPConnectionManager()
 async def websocket_endpoint(websocket: WebSocket):
     """
     Real-time WebSocket feed for VNP scoring metrics.
-    Satisfies the ws://api.vnp.io:8080 requirement from v0.1.5 delivery.
+    Streams VNP Methodology v1.0 telemetry events for connected clients.
     """
     await manager.connect(websocket)
     try:

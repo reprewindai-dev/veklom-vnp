@@ -1,7 +1,7 @@
 "use client";
 
 import React, { lazy, Suspense } from 'react';
-import { ArrowRight, Activity, Shield, Globe2, Zap, Lock, Cpu, Mail, Globe, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Activity, Zap, Lock, Cpu, Mail, ShieldCheck } from 'lucide-react';
 import { motion } from "framer-motion";
 
 const NetworkTopologyPanel = lazy(() => import('./components/NetworkTopologyPanel'));
@@ -33,7 +33,7 @@ export default function VNPLandingPage() {
             <a href="#protocol" className="hover:text-white transition-colors">The Protocol</a>
             <a href="#methodology" className="hover:text-white transition-colors">Methodology</a>
             <a href="#network" className="hover:text-white transition-colors">Global Mesh</a>
-            <a href="https://docs.veklom.com/vnp" className="hover:text-white transition-colors">Documentation</a>
+            <a href="/vnp/docs" className="hover:text-white transition-colors">Documentation</a>
           </div>
           <div className="flex items-center gap-6 text-sm font-medium">
             <a href="/workspace" className="text-gray-400 hover:text-white transition-colors">Access Workspace</a>
@@ -58,7 +58,7 @@ export default function VNPLandingPage() {
         >
           <motion.div variants={fadeUpVariants} className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#FFB800]/10 border border-[#FFB800]/20 text-[#FFB800] text-xs font-semibold uppercase tracking-wider mb-8">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            VNP v1.5 STANDALONE NOW LIVE
+            VNP Methodology v1.0
           </motion.div>
           
           <motion.h1 variants={fadeUpVariants} className="text-5xl lg:text-7xl font-bold tracking-tight mb-6 leading-tight">
@@ -123,7 +123,7 @@ export default function VNPLandingPage() {
               </div>
               <h3 className="text-xl font-bold mb-3">SLA Performance Bonds</h3>
               <p className="text-gray-400 text-sm leading-relaxed">
-                VNP enables Smart Contract Settlement (x402). If an API provider violates their P99 latency SLA, their Micro-Stakes are autonomously slashed and yielded to the consumer.
+                VNP connects real x402 USDC route payments to BYOS settlement evidence, so autonomous clients can route against receipts instead of provider-controlled claims.
               </p>
             </div>
           </div>
@@ -136,23 +136,24 @@ export default function VNPLandingPage() {
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <div className="space-y-8">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FFB800]/10 border border-[#FFB800]/20 text-[#FFB800] text-sm font-medium font-mono">
-                LOCKED SPECIFICATION v0.1.5
+                VNP Methodology v1.0 - UPDATED JULY 7
               </div>
               <h2 className="text-4xl font-extrabold tracking-tight leading-tight">
-                The 10-Dimensional Scoring Model
+                VNP v1.0 Verification Stack
               </h2>
               <p className="text-gray-400 text-lg leading-relaxed">
-                To prevent manipulation, VNP evaluates APIs across 10 immutable vectors. The weights are mathematically locked and transparently verifiable by any node in the global mesh.
+                To prevent manipulation, VNP evaluates API trust through physical measurements, signed telemetry, route beacons, robust scoring, x402 settlement evidence, PGL audit trails, and agent/runtime enforcement.
               </p>
               
               <div className="space-y-4">
                 {[
-                  { name: 'P99 Latency (Geographically Normalized)', weight: '40%' },
-                  { name: 'Error Rate & Correctness', weight: '25%' },
-                  { name: 'Availability & Uptime', weight: '15%' },
-                  { name: 'Throughput & Capacity', weight: '8%' },
-                  { name: 'Security Posture (TLS 1.3+)', weight: '8%' },
-                  { name: 'Documentation & Versioning', weight: '4%' }
+                  { name: 'Physical measurements', weight: 'Live' },
+                  { name: 'Signed telemetry', weight: 'Partial' },
+                  { name: 'Route beacons', weight: 'Connected' },
+                  { name: 'Robust scoring', weight: 'Partial' },
+                  { name: 'x402 settlement evidence', weight: 'Connected' },
+                  { name: 'PGL audit trails', weight: 'Connected' },
+                  { name: 'Agent/runtime enforcement', weight: 'Auth Required' }
                 ].map((item, i) => (
                   <div key={i} className="flex items-center justify-between p-4 rounded-lg bg-white/5 border border-white/10 hover:border-[#FFB800]/30 transition-colors">
                     <span className="font-medium text-gray-300">{item.name}</span>
@@ -167,7 +168,7 @@ export default function VNPLandingPage() {
               <div className="border border-white/10 rounded-2xl overflow-hidden bg-[#0A0A0A] shadow-2xl">
                 <div className="p-4 border-b border-white/5 bg-white/[0.02] flex items-center gap-2">
                   <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-xs font-mono text-gray-400">LIVE DEMO: VNP_TOPOLOGY_MESH</span>
+                  <span className="text-xs font-mono text-gray-400">CONNECTED VIEW: VNP_TOPOLOGY_MESH</span>
                 </div>
                 <div className="h-[500px] overflow-hidden p-6 relative bg-[#060608]">
                   <div className="transform scale-[0.85] origin-top-left w-[117%] h-[117%] pointer-events-none">
@@ -236,7 +237,7 @@ export default function VNPLandingPage() {
           <div>
             <h4 className="font-bold mb-4 text-gray-300">Protocol</h4>
             <ul className="space-y-3">
-              <li><a href="#" className="hover:text-white transition-colors">Methodology v0.1.5</a></li>
+              <li><a href="/vnp/docs/methodology" className="hover:text-white transition-colors">VNP Methodology v1.0</a></li>
               <li><a href="#" className="hover:text-white transition-colors">Governance Charter</a></li>
               <li><a href="#" className="hover:text-white transition-colors">Slashing Mechanics</a></li>
               <li><a href="#" className="hover:text-white transition-colors">x402 Settlement</a></li>

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-VNP v0.1.16 FastAPI Service
-Open-community API quality measurement platform (Canonical Protocol)
+VNP Methodology v1.0 FastAPI Service
+Open-community API quality measurement platform
 Standalone service (port 8089)
 
 Architecture:
@@ -10,7 +10,7 @@ Architecture:
 - Badge generation
 - Public API endpoints
 - Delayed Epoch Disclosure Protocol (VDF Commit/Reveal)
-- Emergency Topology + RPN Support
+- Emergency topology status reporting
 """
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -47,9 +47,9 @@ logger = logging.getLogger(__name__)
 # FASTAPI APP SETUP
 # ============================================================================
 app = FastAPI(
-    title="VNP v0.1.16",
-    description="Open-community API quality measurement (Canonical Protocol)",
-    version="0.1.16"
+    title="VNP Methodology v1.0",
+    description="Cryptographic API telemetry for the machine-to-machine economy",
+    version="1.0.0"
 )
 
 # CORS
@@ -67,7 +67,7 @@ app.add_middleware(
 class Measurement(BaseModel):
     api_id: str
     region: str
-    node_version: str = "v0.1.16" # v0.1.16 or legacy
+    node_version: str = "v1.0.0"
     latency_p99: float
     latency_p95: float
     error_rate: float
@@ -76,7 +76,7 @@ class Measurement(BaseModel):
     # STAMP additions
     hmac_sha256: Optional[str] = None
     pad_tlv_size: Optional[int] = None
-    # RPN flags
+    # Emergency topology flags
     rpn_active: bool = False
     delay_proxy_ms: float = 0.0
 
@@ -128,7 +128,23 @@ SAMPLE_APIS = [
     "huggingface-api"
 ]
 
-# 10-Dimensional Scoring Weights (Locked until 2027-06-22)
+CANONICAL_VNP_NODES = [
+    {"id": "vnp-us-east-1", "region": "us-east-1", "name": "validator-us-east-1", "x": 270, "y": 180},
+    {"id": "vnp-us-west-2", "region": "us-west-2", "name": "validator-us-west-2", "x": 120, "y": 190},
+    {"id": "vnp-eu-west-1", "region": "eu-west-1", "name": "validator-eu-west-1", "x": 380, "y": 150},
+    {"id": "vnp-ap-southeast-1", "region": "ap-southeast-1", "name": "validator-ap-southeast-1", "x": 505, "y": 285},
+    {"id": "vnp-ap-northeast-1", "region": "ap-northeast-1", "name": "validator-ap-northeast-1", "x": 535, "y": 170},
+]
+
+REGION_ALIASES = {
+    "us-east-1": {"us-east-1", "us-east"},
+    "us-west-2": {"us-west-2", "us-west"},
+    "eu-west-1": {"eu-west-1", "eu-west"},
+    "ap-southeast-1": {"ap-southeast-1", "ap-southeast"},
+    "ap-northeast-1": {"ap-northeast-1", "ap-northeast"},
+}
+
+# Internal scoring weights used by the standalone service.
 SCORING_WEIGHTS = {
     "p99_latency": 0.40,
     "error_rate": 0.25,
@@ -143,7 +159,7 @@ SCORING_WEIGHTS = {
 }
 
 # ============================================================================
-# SCORING ENGINE (v0.1.16 MAD-Bounded)
+# SCORING ENGINE (VNP Methodology v1.0 MAD-bounded)
 # ============================================================================
 def calculate_mad(data: List[float]) -> float:
     if not data: return 0.0
@@ -153,8 +169,8 @@ def calculate_mad(data: List[float]) -> float:
 
 def calculate_composite_score(measurements: List[Measurement]) -> Score:
     """
-    Calculate 10-dimensional composite score from measurements.
-    Formula locked until 2027-06-22.
+    Calculate composite score from backend measurement signals.
+    Public cards expose the VNP v1.0 verification stack.
     Uses MAD-based robust bounded estimator (50% breakdown point) instead of legacy strict min.
     """
     if not measurements:
@@ -168,7 +184,7 @@ def calculate_composite_score(measurements: List[Measurement]) -> Score:
         if m.rpn_active:
             actual_rtt = max(1.0, actual_rtt - m.delay_proxy_ms)
         adjusted_latencies.append(actual_rtt)
-        if m.node_version != "v0.1.16":
+        if m.node_version != "v1.0.0":
             legacy_count += 1
             
     # 2. MAD Bounding
@@ -313,7 +329,7 @@ async def health_check():
     """Basic health check endpoint."""
     return {
         "status": "healthy",
-        "version": "0.1.16",
+        "version": "1.0.0",
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -322,7 +338,7 @@ async def health_check():
 async def post_measurement(measurement: Measurement):
     """
     Post a new measurement.
-    Enforces v0.1.16 NTP consensus clock validation.
+    Enforces VNP Methodology v1.0 NTP consensus clock validation.
     """
     # 1. NTP Consensus Clock Validation
     now = datetime.utcnow()
@@ -366,7 +382,7 @@ async def get_measurements(api_id: str, limit: int = 100):
 @app.post("/api/v1/keys/commit")
 async def commit_key(commit: VDFCommit):
     """
-    Step 1 of Delayed Epoch Disclosure (v0.1.16).
+    Step 1 of delayed epoch disclosure.
     Node posts SHA-256 hash of its measurement key.
     """
     api_id = commit.api_id
@@ -380,7 +396,7 @@ async def commit_key(commit: VDFCommit):
 @app.post("/api/v1/keys/reveal")
 async def reveal_key(reveal: VDFReveal):
     """
-    Step 2 of Delayed Epoch Disclosure (v0.1.16).
+    Step 2 of delayed epoch disclosure.
     Node reveals the key and provides a Wesolowski VDF proof.
     """
     api_id = reveal.api_id
@@ -607,24 +623,47 @@ async def admin_config(payload: dict):
 @app.get("/api/v1/beacon/topology")
 async def get_topology():
     """
-    v0.1.16 Topology Telemetry
+    VNP Methodology v1.0 topology telemetry
     If activeNodes drops < 5, emergency topology (RPN) is activated.
     """
-    # Mocking node count for demo based on measurements
-    active_nodes = max(3, len(scores_store) * 2) 
-    emergency_state = active_nodes < 5
+    active_regions = {
+        measurement.region
+        for measurements in measurements_store.values()
+        for measurement in measurements
+    }
+    active_nodes = sum(
+        1
+        for node in CANONICAL_VNP_NODES
+        if REGION_ALIASES[node["region"]] & active_regions
+    )
+    emergency_state = active_nodes < len(CANONICAL_VNP_NODES)
+    nodes = [
+        {
+            **node,
+            "status": "ATTESTING" if REGION_ALIASES[node["region"]] & active_regions else "STANDBY",
+            "status_str": "Connected" if REGION_ALIASES[node["region"]] & active_regions else "Disconnected",
+            "stakeUsd": 0,
+            "cpuMs": 0,
+            "poolUtilization": 0,
+            "version": "vnp-v1.0.0",
+            "tenantLock": "veklom",
+        }
+        for node in CANONICAL_VNP_NODES
+    ]
     
     return {
         "topology": {
-            "networkStatus": "EMERGENCY_RPN_ACTIVE" if emergency_state else "ACTIVE",
+            "networkStatus": "DEGRADED" if emergency_state else "ACTIVE",
             "activeNodes": active_nodes,
+            "expectedNodes": len(CANONICAL_VNP_NODES),
+            "nodes": nodes,
             "shardDepth": 4,
-            "securityLevel": "EAL4+ (v0.1.16 spine)",
+            "securityLevel": "VNP Methodology v1.0",
             "features": {
-                "vdf_time_lock": True,
-                "zk_snark_ready": True,
+                "vdf_time_lock": "Methodology Target",
+                "zk_snark_ready": "Methodology Target",
                 "mad_bounding": True,
-                "rpn_evasion": emergency_state
+                "emergency_topology": "Config Incomplete" if emergency_state else "Connected"
             }
         }
     }
@@ -635,7 +674,7 @@ async def get_topology():
 @app.on_event("startup")
 async def startup_event():
     """Initialize with sample data."""
-    logger.info("VNP v0.1.5 service starting...")
+    logger.info("VNP Methodology v1.0 service starting...")
     
     for api_id in SAMPLE_APIS:
         measurements = [
@@ -675,7 +714,7 @@ else:
     async def root():
         """Root endpoint fallback."""
         return {
-            "service": "Veklom Nexus Protocol v0.1.5",
+            "service": "Veklom Nexus Protocol - VNP Methodology v1.0",
             "status": "running",
             "port": 8089
         }
