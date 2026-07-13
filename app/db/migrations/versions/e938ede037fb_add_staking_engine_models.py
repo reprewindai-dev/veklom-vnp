@@ -18,7 +18,10 @@ depends_on = None
 from sqlalchemy.dialects import postgresql
 
 def upgrade() -> None:
-    # Enums
+    # Enums safely
+    op.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'bond_state_enum') THEN CREATE TYPE bond_state_enum AS ENUM ('draft', 'funded', 'active', 'breach_pending', 'slashed', 'released'); END IF; END $$;")
+    op.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'challenge_state_enum') THEN CREATE TYPE challenge_state_enum AS ENUM ('pending', 'verifying', 'upheld', 'rejected'); END IF; END $$;")
+    
     bond_state = postgresql.ENUM('draft', 'funded', 'active', 'breach_pending', 'slashed', 'released', name='bond_state_enum', create_type=False)
     challenge_state = postgresql.ENUM('pending', 'verifying', 'upheld', 'rejected', name='challenge_state_enum', create_type=False)
 
