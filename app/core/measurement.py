@@ -3,6 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from fastapi import HTTPException
+from app.core.topology import CANONICAL_LOCATION_CODES, LEGACY_REGION_CODE_MAP
 from app.db.models import Observation, MeasurementWindow
 from app.pgl.client import PGLClient, PGLConnectionError
 
@@ -30,10 +31,8 @@ async def finalize_measurement_window(
     unique_nodes = {obs.node_id for obs in observations}
     unique_locations = {obs.physical_location for obs in observations}
     
-    # We need macro regions. Since it's not on observation directly, we can query nodes
-    # or just use region mappings. Assuming observations have `region` like `us-east-1-ash`.
-    # For now, derive unique regions.
-    unique_regions = {obs.region for obs in observations}
+    # Normalize legacy rows while counting current canonical location codes.
+    unique_regions = {LEGACY_REGION_CODE_MAP.get(obs.region, obs.region) for obs in observations}
     
     # Check freshness (max time since last observation)
     now = datetime.now(timezone.utc)
@@ -42,9 +41,7 @@ async def finalize_measurement_window(
         latest = max(obs.completed_at for obs in observations)
         freshness = int((now - latest).total_seconds())
         
-    # Check missing regions (assuming 5 expected regions from the epic)
-    expected_regions = {"us-east-1-ash", "us-west-1-hil", "eu-central-1-nur", "eu-central-1-fal", "ap-southeast-1-sin"}
-    missing_regions = list(expected_regions - unique_regions)
+    missing_regions = sorted(CANONICAL_LOCATION_CODES - unique_regions)
 
     # Calculate confidence band based on sample count
     confidence_band = "high" if sample_count >= 10 else "low"

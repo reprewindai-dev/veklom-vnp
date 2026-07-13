@@ -18,8 +18,8 @@ def valid_observation():
     return CanonicalObservation(
         observation_id="obs_123",
         node_id="00000000-0000-0000-0000-000000000001",
-        region="us-east-1-ash",
-        physical_location="Ashburn, Virginia",
+        region="us-ashburn",
+        physical_location="Ashburn, Virginia, United States",
         target_id="api_veklom_com",
         measurement_profile="ping",
         measurement_version="1.0",
@@ -36,6 +36,8 @@ def valid_observation():
 async def test_valid_observation_ingest(mocker, mock_db, valid_observation):
     # Mock VNPEventVerifier
     mocker.patch.object(VNPEventVerifier, "verify_event_signature", return_value=True)
+    mock_pgl = mocker.patch("app.api.routers.vnp_ingest.PGLClient")
+    mock_pgl.return_value.mint_receipt = AsyncMock(return_value="pgl_receipt_123")
 
     # Mock DB executes
     mock_execute = AsyncMock()
@@ -45,7 +47,7 @@ async def test_valid_observation_ingest(mocker, mock_db, valid_observation):
     # fourth call: sequence check -> returns previous Observation
     
     mock_node_key = NodeKey(key_id="key_1", node_id="00000000-0000-0000-0000-000000000001", public_key="pub_key", active=True)
-    mock_node = Node(id="00000000-0000-0000-0000-000000000001", region_code="us-east-1-ash")
+    mock_node = Node(id="00000000-0000-0000-0000-000000000001", region_code="us-ashburn")
     mock_prev_obs = Observation(sequence=1, signature="1234567890abcdef_sig")
     
     # We will just patch the execute to return a mock scalar_one_or_none that cycles
@@ -87,8 +89,8 @@ async def test_invalid_region_reject(mocker, mock_db, valid_observation):
     mocker.patch.object(VNPEventVerifier, "verify_event_signature", return_value=True)
 
     mock_node_key = NodeKey(key_id="key_1", node_id="00000000-0000-0000-0000-000000000001", public_key="pub_key", active=True)
-    # The node is registered in eu-central-1-nur but observation claims us-east-1-ash
-    mock_node = Node(id="00000000-0000-0000-0000-000000000001", region_code="eu-central-1-nur")
+    # The node is registered in de-nuremberg but observation claims us-ashburn.
+    mock_node = Node(id="00000000-0000-0000-0000-000000000001", region_code="de-nuremberg")
     mock_prev_obs = Observation(sequence=1, signature="1234567890abcdef_sig")
     
     class SmartMockResult:
@@ -126,7 +128,7 @@ async def test_sequence_replay_reject(mocker, mock_db, valid_observation):
     mocker.patch.object(VNPEventVerifier, "verify_event_signature", return_value=True)
 
     mock_node_key = NodeKey(key_id="key_1", node_id="00000000-0000-0000-0000-000000000001", public_key="pub_key", active=True)
-    mock_node = Node(id="00000000-0000-0000-0000-000000000001", region_code="us-east-1-ash")
+    mock_node = Node(id="00000000-0000-0000-0000-000000000001", region_code="us-ashburn")
     # Previous observation already has sequence 2, so the incoming sequence 2 is a replay
     mock_prev_obs = Observation(sequence=2, signature="1234567890abcdef_sig")
     
