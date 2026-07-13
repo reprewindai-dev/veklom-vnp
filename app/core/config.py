@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     vnp_require_db: bool = True
     vnp_cors_allow_origins: str = ""
     vnp_node_heartbeat_freshness_seconds: int = 300
+    vnp_autonomous_slashing_enabled: bool = False
     database_url: str = os.getenv(
         "DATABASE_URL",
         "postgresql+asyncpg://postgres:postgres@localhost:5432/veklom",
@@ -76,6 +77,13 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "Refusing production startup: wildcard CORS origin configured. "
                 "Set VNP_CORS_ALLOW_ORIGINS to an explicit allowlist."
+            )
+        if self.vnp_autonomous_slashing_enabled:
+            # We must fail closed if this is enabled without proper verification
+            raise RuntimeError(
+                "Refusing production startup: VNP_AUTONOMOUS_SLASHING_ENABLED=true "
+                "is not permitted. Autonomous slashing cannot be safely enabled without "
+                "CAPPO authorization, verified PGL evidence, and real settlement bindings."
             )
 
 

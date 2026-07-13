@@ -363,9 +363,13 @@ async def ingest_observations_batches(
                         for bond in bonds:
                             await engine.evaluate_bond_for_slash(bond.id)
             
-            # URGENY CONTAINMENT: Slashing engine disabled pending review
-            # asyncio.create_task(evaluate_targets(event_data["target_ids"]))
-            
+            # URGENY CONTAINMENT: Slashing engine is contained behind config flag
+            from app.core.config import get_settings
+            if get_settings().vnp_autonomous_slashing_enabled:
+                asyncio.create_task(evaluate_targets(event_data["target_ids"]))
+            else:
+                logger.info(f"Skipping VNP autonomous slashing for targets {event_data['target_ids']}: Containment Active.")
+                
         except PGLConnectionError as e:
             # Reverting is an option but the prompt implies we bubble it to 503
             # or fail-safe. If we raise HTTPException, Fastapi returns error.
