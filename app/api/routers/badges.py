@@ -10,7 +10,7 @@ from app.db.models import Api, RegionalTelemetry
 
 router = APIRouter(prefix="/badges", tags=["vnp-badges"])
 
-def generate_svg_badge(api_name: str, score: float, tier: str, date_str: str) -> str:
+def generate_svg_badge(api_name: str, score_text: str, tier: str, date_str: str) -> str:
     """Generates an XML-compliant SVG badge for VNP."""
 
     color = "#FF6B35" # Default Orange
@@ -30,7 +30,7 @@ def generate_svg_badge(api_name: str, score: float, tier: str, date_str: str) ->
   <!-- Left Side: VNP Logo / Score -->
   <path d="M0 8C0 3.58172 3.58172 0 8 0H80V60H8C3.58172 60 0 56.4183 0 52V8Z" fill="{color}"/>
   <text x="40" y="22" fill="#000000" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold" text-anchor="middle">VNP SCORE</text>
-  <text x="40" y="48" fill="#000000" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="900" text-anchor="middle">{score:.1f}</text>
+  <text x="40" y="48" fill="#000000" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="900" text-anchor="middle">{score_text}</text>
 
   <!-- Right Side: API Info -->
   <text x="95" y="24" fill="#FFFFFF" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="bold">{api_name}</text>
@@ -63,7 +63,11 @@ async def get_api_badge_svg(api_id: str, db: AsyncSession = Depends(get_db)):
         .limit(1)
     )).scalars().first()
 
-    score = float(telemetry.trust_score) if telemetry else float(api.current_composite_score)
+    if telemetry is None:
+        svg_content = generate_svg_badge(api.name, "—", "NO EVIDENCE", "no evidence")
+        return Response(content=svg_content, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=300"})
+
+    score = float(telemetry.trust_score)
 
     if score >= 85:
         tier = "GOLD"
@@ -76,5 +80,5 @@ async def get_api_badge_svg(api_id: str, db: AsyncSession = Depends(get_db)):
 
     date_str = telemetry.measured_at.strftime("%Y-%m-%d %H:%M") if telemetry else datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
 
-    svg_content = generate_svg_badge(api.name, score, tier, date_str)
+    svg_content = generate_svg_badge(api.name, f"{score:.1f}", tier, date_str)
     return Response(content=svg_content, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=300"})

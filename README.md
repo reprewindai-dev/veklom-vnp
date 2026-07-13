@@ -56,4 +56,29 @@ npm run lint
 npm run build
 ```
 
-Status labels must remain truthful: `Live`, `Connected`, `Partially Implemented`, `Demo Mode`, `Methodology Target`, `Not Yet Wired`, `Config Incomplete`, `Disconnected`, or `Auth Required`.
+Status labels must remain truthful: `Live`, `Connected`, `Partially Implemented`, `Demo Mode`, `Methodology Target`, `Not Yet Wired`, `Config Incomplete`, `Disconnected`, `Auth Required`, or `Insufficient Evidence`.
+
+## Backend runtime configuration
+
+The deployed entrypoint is `app.main:app` (database-backed only). Environment variables (names only, never commit values):
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | production: yes | Async PostgreSQL URL. Production refuses to start without it. |
+| `VNP_ENV` | recommended | `production` enables fail-closed startup checks. |
+| `VNP_ALLOW_DEMO_DATA` | no (default `false`) | Enables the in-memory demo runtime under `/api/v1/demo/*`. Never active in production; production refuses to start if set. |
+| `VNP_CORS_ALLOW_ORIGINS` | no | Comma-separated CORS allowlist. Production defaults to the veklom.com origins; wildcard is rejected. |
+| `REDIS_URL` | for probe cache | Redis for batch probe-event dedup cache. |
+
+Migrations:
+
+```bash
+alembic upgrade head
+```
+
+Backend tests:
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```

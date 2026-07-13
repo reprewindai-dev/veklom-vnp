@@ -125,19 +125,27 @@ async def get_nexus_scores(db: AsyncSession = Depends(get_db)):
         tel_result = await db.execute(telemetry_stmt)
         latest_telemetry = tel_result.scalar_one_or_none()
         
-        if latest_telemetry:
-            # Map real DB metrics to 0-100 scales
-            perf_score = max(0, 100 - (latest_telemetry.p99_latency_ms / 10))
-            rel_score = float(latest_telemetry.uptime_percent)
-            composite = float(latest_telemetry.trust_score)
-            anchor_hash = latest_telemetry.on_chain_anchor or "0xPENDING"
-            tx_hash = latest_telemetry.provenance_hash or "0xPENDING"
-        else:
-            perf_score = api.current_composite_score
-            rel_score = api.current_composite_score
-            composite = api.current_composite_score
-            anchor_hash = "0xPENDING"
-            tx_hash = "0xPENDING"
+        if not latest_telemetry:
+            scorecards.append({
+                "id": api_id_str,
+                "name": api.name,
+                "provider": api_id_str.split("-")[0] if api.name else "Unknown",
+                "score": None,
+                "grade": None,
+                "status": "Insufficient Evidence",
+                "dimensions": [],
+                "anchorHash": None,
+                "txHash": None,
+                "lastUpdated": _time_ago(api.updated_at) if hasattr(api, "updated_at") and api.updated_at else "—",
+            })
+            continue
+
+        # Map real DB metrics to 0-100 scales
+        perf_score = max(0, 100 - (latest_telemetry.p99_latency_ms / 10))
+        rel_score = float(latest_telemetry.uptime_percent)
+        composite = float(latest_telemetry.trust_score)
+        anchor_hash = latest_telemetry.on_chain_anchor
+        tx_hash = latest_telemetry.provenance_hash
 
         dimensions = []
         weighted_sum = 0.0
@@ -170,6 +178,7 @@ async def get_nexus_scores(db: AsyncSession = Depends(get_db)):
             "provider": api_id_str.split("-")[0] if api.name else "Unknown",
             "score": overall,
             "grade": grade,
+            "status": "Connected",
             "dimensions": dimensions,
             "anchorHash": anchor_hash,
             "txHash": tx_hash,
