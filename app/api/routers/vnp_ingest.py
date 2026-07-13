@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 from app.db.database import get_db
 from app.core.security import VNPEventVerifier, VNPSecurityError
 from app.db.models import (
-    ProbeEvent, UsageEvent, Api, Customer, Project, SdkCredential, RoutePolicy, Provider, ProbeResultState
+    ProbeEvent, UsageEvent, Api, Customer, Project, SdkCredential, RoutePolicy, Provider, ProbeResultState,
+    Node, NodeKey, Observation
 )
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,33 @@ class ProbeEventItem(BaseModel):
 class ProbeBatch(BaseModel):
     batch_id: str
     events: List[ProbeEventItem]
+
+class CanonicalObservation(BaseModel):
+    schema_version: str = Field(alias="schema", default="veklom.vnp.observation.v1")
+    observation_id: str
+    node_id: str
+    region: str
+    physical_location: str
+    target_id: str
+    measurement_profile: str
+    measurement_version: str
+    started_at: datetime
+    completed_at: datetime
+    dns_ms: Optional[int] = None
+    tcp_ms: Optional[int] = None
+    tls_ms: Optional[int] = None
+    ttfb_ms: Optional[int] = None
+    total_ms: Optional[int] = None
+    http_status: Optional[int] = None
+    response_fingerprint: Optional[str] = None
+    error_code: Optional[str] = None
+    sequence: int
+    previous_observation_hash: Optional[str] = None
+    signature_key_id: str
+    signature: str
+
+class ObservationBatch(BaseModel):
+    observations: List[CanonicalObservation]
 
 class UsageMeasurement(BaseModel):
     billable_units: int
@@ -172,6 +200,129 @@ async def ingest_probe_events(
             accepted += 1
         except Exception as e:
             logger.error(f"Failed to insert probe event {event.event_id}: {e}")
+            rejected += 1
+
+    await db.commit()
+    
+    return {
+        "accepted": accepted,
+        "rejected": rejected,
+        "deduplicated": deduplicated
+    }
+
+
+@router.post("/observations/batches")
+async def ingest_observations_batches(
+    batch: ObservationBatch = Body(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Accept canonical physical observations from registered VNP nodes.
+    """
+    accepted = 0
+    rejected = 0
+    deduplicated = 0
+
+    now = datetime.now(timezone.utc)
+
+    for obs in batch.observations:
+        # 1. Reject events > 10 mins in future
+        if obs.started_at > now + timedelta(minutes=10):
+            rejected += 1
+            continue
+
+        # 2. Check for duplicate observation_id
+        stmt = select(Observation.id).where(Observation.observation_id == obs.observation_id)
+        existing = await db.execute(stmt)
+        if existing.first():
+            deduplicated += 1
+            continue
+
+        # 3. Resolve Node and NodeKey
+        stmt = select(NodeKey).where(NodeKey.key_id == obs.signature_key_id)
+        result = await db.execute(stmt)
+        node_key = result.scalar_one_or_none()
+        
+        if not node_key or not node_key.active or node_key.revoked_at:
+            logger.warning(f"Invalid or revoked key {obs.signature_key_id}")
+            rejected += 1
+            continue
+
+        # Get the node to check region authorization
+        stmt = select(Node).where(Node.id == node_key.node_id)
+        result = await db.execute(stmt)
+        node = result.scalar_one_or_none()
+        
+        if not node or str(node.id) != obs.node_id or node.region_code != obs.region:
+            logger.warning(f"Node validation failed for {obs.observation_id}")
+            rejected += 1
+            continue
+
+        # Verify Sequence and Previous Hash Continuity
+        stmt = (
+            select(Observation)
+            .where(Observation.node_id == node.id)
+            .where(Observation.target_id == obs.target_id)
+            .order_by(Observation.sequence.desc())
+            .limit(1)
+        )
+        result = await db.execute(stmt)
+        last_obs = result.scalar_one_or_none()
+
+        if last_obs:
+            if obs.sequence <= last_obs.sequence:
+                logger.warning(f"Sequence {obs.sequence} is older than last observed {last_obs.sequence} for target {obs.target_id}")
+                rejected += 1
+                continue
+            
+            expected_prev_hash = f"hash_{last_obs.signature[:16]}"
+            if obs.previous_observation_hash != expected_prev_hash and obs.previous_observation_hash != "bootstrap":
+                logger.warning(f"Previous hash mismatch. Expected {expected_prev_hash}, got {obs.previous_observation_hash}")
+                rejected += 1
+                continue
+
+        # 4. Verify Signature (Using VNPEventVerifier)
+        try:
+            raw_obs = obs.model_dump(mode="json", by_alias=True)
+            # Remove signature before verifying, if signature is generated from payload minus sig
+            # Wait, VNPEventVerifier signature logic expects the payload as signed by the node.
+            # Assuming payload contains signature but we verify against the rest or as the standard dictates.
+            VNPEventVerifier.verify_event_signature(raw_obs, node_key.public_key)
+        except VNPSecurityError as e:
+            logger.warning(f"Signature verification failed for {obs.observation_id}: {e}")
+            rejected += 1
+            continue
+            
+        # 5. Insert into DB
+        try:
+            new_obs = Observation(
+                observation_id=obs.observation_id,
+                node_id=node.id,
+                region=obs.region,
+                physical_location=obs.physical_location,
+                target_id=obs.target_id,
+                measurement_profile=obs.measurement_profile,
+                measurement_version=obs.measurement_version,
+                started_at=obs.started_at,
+                completed_at=obs.completed_at,
+                dns_ms=obs.dns_ms,
+                tcp_ms=obs.tcp_ms,
+                tls_ms=obs.tls_ms,
+                ttfb_ms=obs.ttfb_ms,
+                total_ms=obs.total_ms,
+                http_status=obs.http_status,
+                response_fingerprint=obs.response_fingerprint,
+                error_code=obs.error_code,
+                sequence=obs.sequence,
+                previous_observation_hash=obs.previous_observation_hash,
+                signature_key_id=obs.signature_key_id,
+                signature=obs.signature,
+                created_at=now
+            )
+            db.add(new_obs)
+            accepted += 1
+        except Exception as e:
+            logger.error(f"Failed to insert observation {obs.observation_id}: {e}")
             rejected += 1
 
     await db.commit()

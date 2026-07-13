@@ -1,0 +1,66 @@
+from datetime import datetime, timezone
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from app.db.models import Observation, MeasurementWindow
+
+async def finalize_measurement_window(
+    db: AsyncSession, target_id: str, window_start: datetime, window_end: datetime
+) -> MeasurementWindow:
+    """
+    Finalize a measurement window for a target over a time range.
+    Gathers observations, counts nodes and regions, and creates the window record.
+    """
+    # 1. Fetch observations for the window
+    stmt = (
+        select(Observation)
+        .where(Observation.target_id == target_id)
+        .where(Observation.started_at >= window_start)
+        .where(Observation.started_at < window_end)
+    )
+    result = await db.execute(stmt)
+    observations = result.scalars().all()
+
+    # 2. Aggregate metrics
+    sample_count = len(observations)
+    unique_nodes = {obs.node_id for obs in observations}
+    unique_locations = {obs.physical_location for obs in observations}
+    
+    # We need macro regions. Since it's not on observation directly, we can query nodes
+    # or just use region mappings. Assuming observations have `region` like `us-east-1-ash`.
+    # For now, derive unique regions.
+    unique_regions = {obs.region for obs in observations}
+    
+    # Check freshness (max time since last observation)
+    now = datetime.now(timezone.utc)
+    freshness = 0
+    if observations:
+        latest = max(obs.completed_at for obs in observations)
+        freshness = int((now - latest).total_seconds())
+        
+    # Check missing regions (assuming 5 expected regions from the epic)
+    expected_regions = {"us-east-1-ash", "us-west-1-hil", "eu-central-1-nur", "eu-central-1-fal", "ap-southeast-1-sin"}
+    missing_regions = list(expected_regions - unique_regions)
+
+    # Calculate confidence band based on sample count
+    confidence_band = "high" if sample_count >= 10 else "low"
+
+    # Create the window
+    window = MeasurementWindow(
+        target_id=target_id,
+        window_start=window_start,
+        window_end=window_end,
+        node_count=len(unique_nodes),
+        physical_location_count=len(unique_locations),
+        macro_region_count=len(unique_regions), # Approximation
+        sample_count=sample_count,
+        freshness=freshness,
+        missing_regions=missing_regions,
+        provisional_flag=False,
+        confidence_band=confidence_band,
+        formula_version="v1.0"
+    )
+    
+    db.add(window)
+    await db.commit()
+    
+    return window
