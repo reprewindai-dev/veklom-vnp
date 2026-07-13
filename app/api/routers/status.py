@@ -124,7 +124,7 @@ async def get_capabilities(db: AsyncSession = Depends(get_db)) -> CapabilityStat
                 db,
                 "vnp_physical_probes",
                 ProbeEvent,
-                ProbeEvent.measured_at,
+                ProbeEvent.occurred_at,
                 ["node_keypair", "node_registration", "region_assignment"],
                 "No signed observations received",
             )

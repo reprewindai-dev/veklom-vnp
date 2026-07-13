@@ -138,10 +138,10 @@ def create_app() -> FastAPI:
         rows = (
             await db.execute(
                 select(
-                    ProbeEvent.region,
+                    ProbeEvent.api_region_code,
                     func.count(ProbeEvent.id),
-                    func.max(ProbeEvent.measured_at),
-                ).group_by(ProbeEvent.region)
+                    func.max(ProbeEvent.occurred_at),
+                ).group_by(ProbeEvent.api_region_code)
             )
         ).all()
 

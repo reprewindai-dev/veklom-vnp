@@ -188,27 +188,30 @@ class ProbeEvent(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     event_id = Column(String(100), unique=True, nullable=False)
-    partition_key = Column(String(20), nullable=False, index=True) # YYYY-MM
-    api_id = Column(UUID(as_uuid=True), ForeignKey("vnp_apis.id", ondelete="CASCADE"), nullable=False)
-    region = Column(String(50), nullable=False)
     worker_id = Column(String(100), nullable=False)
-    worker_signature = Column(String, nullable=False)
-    latency_ms = Column(Float)
+    worker_region = Column(String(50), nullable=False)
+    runtime = Column(String(50), nullable=False, default="unknown")
+    api_id = Column(UUID(as_uuid=True), ForeignKey("vnp_apis.id", ondelete="CASCADE"), nullable=False)
+    api_region_code = Column(String(50), nullable=False)
+    endpoint_url = Column(String, nullable=False, default="")
+    occurred_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    dns_ms = Column(Integer)
+    connect_ms = Column(Integer)
+    tls_ms = Column(Integer)
+    ttfb_ms = Column(Integer)
+    total_ms = Column(Integer, nullable=False)
     status_code = Column(Integer)
-    http_version = Column(String(10))
-    tls_version = Column(String(20))
-    error_reason = Column(String)
-    measured_at = Column(DateTime(timezone=True), nullable=False, index=True)
-    evidence_hash = Column(String)
-    provenance_hash = Column(String)
-    cryptography_anchor = Column(String)
-    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
-
-    # Note: Real PostgreSQL partitioning requires __table_args__ with postgresql_partition_by
-    # but we will rely on partition_key for now unless native partitioning is strictly required via SQL.
+    result_state = Column(Enum(ProbeResultState, name="probe_result_state_enum", create_type=False), nullable=False)
+    success = Column(Boolean, nullable=False)
+    timeout = Column(Boolean, nullable=False)
+    error_class = Column(String(100))
+    signature_alg = Column(String(20), nullable=False, default="ed25519")
+    signature_key_id = Column(String(100), nullable=False, default="unknown")
+    signature_value = Column(String, nullable=False, default="")
+    received_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     __table_args__ = (
-        Index("idx_probe_events_api_region_time", "api_id", "region", "measured_at"),
+        Index("idx_probe_events_api_region_time", "api_id", "api_region_code", "occurred_at"),
     )
 
 

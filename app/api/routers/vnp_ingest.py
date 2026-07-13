@@ -177,24 +177,29 @@ async def ingest_probe_events(
 
         # 4. Insert into DB
         try:
-            partition_key = event.occurred_at.strftime("%Y-%m")
             new_probe = ProbeEvent(
                 event_id=event.event_id,
-                partition_key=partition_key,
-                api_id=event.target.get("api_id"),
-                region=event.target.get("region_code"),
                 worker_id=event.producer.get("worker_id", "unknown"),
-                worker_signature=event.signature.sig,
-                latency_ms=float(event.measurement.total_ms),
+                worker_region=event.producer.get("region_code", "unknown"),
+                runtime=event.producer.get("runtime", "unknown"),
+                api_id=event.target.get("api_id"),
+                api_region_code=event.target.get("region_code"),
+                endpoint_url=event.target.get("endpoint_url", ""),
+                occurred_at=event.occurred_at,
+                dns_ms=getattr(event.measurement, "dns_ms", None),
+                connect_ms=getattr(event.measurement, "connect_ms", None),
+                tls_ms=getattr(event.measurement, "tls_ms", None),
+                ttfb_ms=getattr(event.measurement, "ttfb_ms", None),
+                total_ms=int(event.measurement.total_ms),
                 status_code=event.measurement.status_code,
-                error_reason=event.measurement.error_class,
-                http_version="HTTP/2", # Injected from strict schema update
-                tls_version="TLSv1.3",
-                cryptography_anchor=f"hash_{event.signature.sig[:8]}",
-                provenance_hash=f"prov_{event.event_id}",
-                measured_at=event.occurred_at,
-                evidence_hash=None, # To be added if needed
-                created_at=now
+                result_state="success" if event.measurement.status_code and event.measurement.status_code < 400 else "http_error",
+                success=True if event.measurement.status_code and event.measurement.status_code < 400 else False,
+                timeout=False,
+                error_class=event.measurement.error_class,
+                signature_alg=getattr(event.signature, "alg", "ed25519"),
+                signature_key_id=getattr(event.signature, "key_id", "unknown"),
+                signature_value=getattr(event.signature, "sig", ""),
+                received_at=now
             )
             db.add(new_probe)
             accepted += 1
