@@ -32,7 +32,7 @@ Do not reintroduce stale dimension-count shorthand or locked legacy-spec public 
 The standalone VNP surface talks only to the real implementation backends:
 
 - BYOS backend: `https://api.veklom.com`
-- CAPPO governed runtime backend: `https://cappo.veklom.com`
+- CAPPO governed runtime backend: `https://capi.veklom.com`
 
 Local Vite proxy defaults:
 
