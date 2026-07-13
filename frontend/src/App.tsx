@@ -16,6 +16,9 @@ const staggerContainer = {
   visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
 };
 
+const VEKLOM_URL = "https://veklom.com";
+const VNP_GITHUB_URL = "https://github.com/reprewindai-dev/veklom-vnp";
+
 export default function VNPLandingPage() {
   return (
     <main className="min-h-screen bg-[#0A0A0A] text-white overflow-x-hidden selection:bg-[#FFB800]/30 relative z-10 font-sans">
@@ -33,11 +36,11 @@ export default function VNPLandingPage() {
             <a href="#protocol" className="hover:text-white transition-colors">The Protocol</a>
             <a href="#methodology" className="hover:text-white transition-colors">Methodology</a>
             <a href="#network" className="hover:text-white transition-colors">Global Mesh</a>
-            <a href="/vnp/docs" className="hover:text-white transition-colors">Documentation</a>
+            <a href={`${VEKLOM_URL}/vnp/docs`} className="hover:text-white transition-colors">Documentation</a>
           </div>
           <div className="flex items-center gap-6 text-sm font-medium">
-            <a href="/workspace" className="text-gray-400 hover:text-white transition-colors">Access Workspace</a>
-            <a href="/signup" className="bg-white text-black px-4 py-2 rounded-md hover:bg-gray-200 transition-colors">
+            <a href={`${VEKLOM_URL}/workspace`} className="text-gray-400 hover:text-white transition-colors">Access Workspace</a>
+            <a href={`${VEKLOM_URL}/signup`} className="bg-white text-black px-4 py-2 rounded-md hover:bg-gray-200 transition-colors">
               Deploy Agent
             </a>
           </div>
@@ -73,10 +76,10 @@ export default function VNPLandingPage() {
           </motion.p>
           
           <motion.div variants={fadeUpVariants} className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a href="/workspace" className="w-full sm:w-auto px-8 py-4 rounded-lg bg-white text-black font-bold text-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-white/5">
+            <a href={`${VEKLOM_URL}/workspace`} className="w-full sm:w-auto px-8 py-4 rounded-lg bg-white text-black font-bold text-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-white/5">
               Access the Protocol <ArrowRight className="w-5 h-5" />
             </a>
-            <a href="#methodology" className="w-full sm:w-auto px-8 py-4 rounded-lg bg-white/5 border border-white/10 text-white font-bold text-lg hover:bg-white/10 transition-colors flex items-center justify-center">
+            <a href={`${VEKLOM_URL}/vnp/methodology`} className="w-full sm:w-auto px-8 py-4 rounded-lg bg-white/5 border border-white/10 text-white font-bold text-lg hover:bg-white/10 transition-colors flex items-center justify-center">
               Read the Methodology
             </a>
           </motion.div>
@@ -163,7 +166,7 @@ export default function VNPLandingPage() {
               </div>
             </div>
             
-            <div className="relative">
+            <div id="network" className="relative scroll-mt-24">
               <div className="absolute -inset-4 bg-gradient-to-r from-[#FFB800]/10 to-transparent blur-2xl opacity-50 rounded-3xl -z-10" />
               <div className="border border-white/10 rounded-2xl overflow-hidden bg-[#0A0A0A] shadow-2xl">
                 <div className="p-4 border-b border-white/5 bg-white/[0.02] flex items-center gap-2">
@@ -213,7 +216,7 @@ export default function VNPLandingPage() {
             </div>
           </div>
 
-          <a href="/vnp/claim" className="inline-flex px-10 py-5 rounded-lg bg-white text-black font-bold text-lg hover:bg-gray-200 transition-colors items-center gap-2 shadow-lg shadow-white/5">
+          <a href={`${VEKLOM_URL}/vnp/claim`} className="inline-flex px-10 py-5 rounded-lg bg-white text-black font-bold text-lg hover:bg-gray-200 transition-colors items-center gap-2 shadow-lg shadow-white/5">
             Submit API for VNP Evaluation <Zap className="w-5 h-5" />
           </a>
         </div>
@@ -237,30 +240,30 @@ export default function VNPLandingPage() {
           <div>
             <h4 className="font-bold mb-4 text-gray-300">Protocol</h4>
             <ul className="space-y-3">
-              <li><a href="/vnp/docs/methodology" className="hover:text-white transition-colors">VNP Methodology v1.0</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Governance Charter</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Slashing Mechanics</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">x402 Settlement</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/methodology`} className="hover:text-white transition-colors">VNP Methodology v1.0</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/governance`} className="hover:text-white transition-colors">Governance Charter</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/slashing`} className="hover:text-white transition-colors">Slashing Mechanics</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/x402`} className="hover:text-white transition-colors">x402 Settlement</a></li>
             </ul>
           </div>
           
           <div>
             <h4 className="font-bold mb-4 text-gray-300">Developers</h4>
             <ul className="space-y-3">
-              <li><a href="#" className="hover:text-white transition-colors">Documentation</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Python Probe SDK</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">FastAPI Integration</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">GitHub Repository</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/docs`} className="hover:text-white transition-colors">Documentation</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/sdk/python`} className="hover:text-white transition-colors">Python Probe SDK</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/sdk/fastapi`} className="hover:text-white transition-colors">FastAPI Integration</a></li>
+              <li><a href={VNP_GITHUB_URL} className="hover:text-white transition-colors">GitHub Repository</a></li>
             </ul>
           </div>
           
           <div>
             <h4 className="font-bold mb-4 text-gray-300">Network</h4>
             <ul className="space-y-3">
-              <li><a href="#" className="hover:text-white transition-colors">Global Topology Map</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Node Operator Guide</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">API Directory</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Status & Uptime</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/topology`} className="hover:text-white transition-colors">Global Topology Map</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/operators`} className="hover:text-white transition-colors">Node Operator Guide</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/directory`} className="hover:text-white transition-colors">API Directory</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/status`} className="hover:text-white transition-colors">Status & Uptime</a></li>
             </ul>
           </div>
         </div>
