@@ -13,6 +13,7 @@ from app.db.models import (
     Node, NodeKey, Observation
 )
 from app.pgl.client import PGLClient, PGLConnectionError
+from app.services.slashing_engine import SlashingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -342,6 +343,28 @@ async def ingest_observations_batches(
         try:
             receipt_id = await pgl_client.mint_receipt("observation_batch_ingest", event_data)
             logger.info(f"Minted PGL receipt {receipt_id} for batch")
+            
+            # Fire the central slashing engine to evaluate bonds for the affected targets
+            # Run in the background so it doesn't block ingestion
+            import asyncio
+            from app.db.models import ProviderBond, BondState
+            
+            async def evaluate_targets(targets):
+                for target_id in targets:
+                    stmt = select(ProviderBond).where(
+                        ProviderBond.target_api_id == target_id,
+                        ProviderBond.state.in_([BondState.active, BondState.funded])
+                    )
+                    res = await db.execute(stmt)
+                    bonds = res.scalars().all()
+                    
+                    if bonds:
+                        engine = SlashingEngine(db)
+                        for bond in bonds:
+                            await engine.evaluate_bond_for_slash(bond.id)
+            
+            asyncio.create_task(evaluate_targets(event_data["target_ids"]))
+            
         except PGLConnectionError as e:
             # Reverting is an option but the prompt implies we bubble it to 503
             # or fail-safe. If we raise HTTPException, Fastapi returns error.

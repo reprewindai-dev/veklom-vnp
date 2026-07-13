@@ -177,8 +177,8 @@ async def challenge_bond(bond_id: str, req: ChallengeRequest, db: AsyncSession =
 @router.post("/bonds/{bond_id}/resolutions", status_code=200)
 async def resolve_challenge(bond_id: str, challenge_id: str = Body(embed=True), action: str = Body(embed=True), db: AsyncSession = Depends(get_db)):
     """Resolve a challenge by slashing or releasing the bond."""
-    if action not in ["slash", "release", "dismiss"]:
-        raise HTTPException(status_code=400, detail="Action must be 'slash', 'release', or 'dismiss'")
+    if action not in ["release", "dismiss"]:
+        raise HTTPException(status_code=400, detail="Action must be 'release', or 'dismiss'. Slashing is autonomously executed by the VNP engine.")
         
     c_stmt = select(BondChallenge).where(BondChallenge.id == uuid.UUID(challenge_id))
     c_res = await db.execute(c_stmt)
@@ -193,10 +193,7 @@ async def resolve_challenge(bond_id: str, challenge_id: str = Body(embed=True), 
     
     now = datetime.now(timezone.utc)
     
-    if action == "slash":
-        bond.state = BondState.slashed
-        challenge.state = ChallengeState.upheld
-    elif action == "release":
+    if action == "release":
         bond.state = BondState.released
         challenge.state = ChallengeState.rejected
     else:
