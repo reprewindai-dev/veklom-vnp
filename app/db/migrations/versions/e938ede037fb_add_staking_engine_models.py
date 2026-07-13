@@ -19,10 +19,8 @@ from sqlalchemy.dialects import postgresql
 
 def upgrade() -> None:
     # Enums
-    bond_state = postgresql.ENUM('draft', 'funded', 'active', 'breach_pending', 'slashed', 'released', name='bond_state_enum')
-    bond_state.create(op.get_bind())
-    challenge_state = postgresql.ENUM('pending', 'verifying', 'upheld', 'rejected', name='challenge_state_enum')
-    challenge_state.create(op.get_bind())
+    bond_state = postgresql.ENUM('draft', 'funded', 'active', 'breach_pending', 'slashed', 'released', name='bond_state_enum', create_type=False)
+    challenge_state = postgresql.ENUM('pending', 'verifying', 'upheld', 'rejected', name='challenge_state_enum', create_type=False)
 
     # Provider Bonds
     op.create_table('vnp_provider_bonds',
