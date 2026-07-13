@@ -548,3 +548,68 @@ class MeasurementWindow(Base):
     __table_args__ = (
         Index("idx_measure_win_target_start", "target_id", "window_start"),
     )
+
+class Score(Base):
+    __tablename__ = "vnp_scores"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    target_id = Column(String(200), nullable=False)
+    measurement_window_id = Column(UUID(as_uuid=True), ForeignKey("vnp_measurement_windows.id"), nullable=False)
+    operational_score = Column(Float, nullable=False)
+    latency_score = Column(Float, nullable=False)
+    availability_score = Column(Float, nullable=False)
+    reliability_score = Column(Float, nullable=False)
+    score_version = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("idx_vnp_scores_target_time", "target_id", "created_at"),
+    )
+
+class VabpRunState(str, enum.Enum):
+    pending = "pending"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+
+class VabpRun(Base):
+    __tablename__ = "vnp_vabp_runs"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    target_id = Column(String(200), nullable=False)
+    run_state = Column(Enum(VabpRunState, name="vabp_run_state_enum", create_type=False), nullable=False, default=VabpRunState.pending)
+    total_score = Column(Integer)
+    suite_version = Column(String(50), nullable=False)
+    started_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    completed_at = Column(DateTime(timezone=True))
+    error_reason = Column(String)
+
+class VabpTestResult(Base):
+    __tablename__ = "vnp_vabp_test_results"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(UUID(as_uuid=True), ForeignKey("vnp_vabp_runs.id", ondelete="CASCADE"), nullable=False)
+    test_name = Column(String(200), nullable=False)
+    dimension = Column(String(50), nullable=False)
+    passed = Column(Boolean, nullable=False)
+    score_awarded = Column(Integer, nullable=False)
+    max_score = Column(Integer, nullable=False)
+    evidence_hash = Column(String)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+class TrustCertificate(Base):
+    __tablename__ = "vnp_trust_certificates"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    target_id = Column(String(200), nullable=False)
+    vabp_run_id = Column(UUID(as_uuid=True), ForeignKey("vnp_vabp_runs.id"), nullable=False)
+    score = Column(Integer, nullable=False)
+    passed_threshold = Column(Boolean, nullable=False)
+    issued_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    pgl_evidence_id = Column(String)
+    revoked = Column(Boolean, nullable=False, default=False)
+    
+    __table_args__ = (
+        Index("idx_trust_certs_target", "target_id", "issued_at"),
+    )
