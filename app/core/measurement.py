@@ -1,7 +1,12 @@
 from datetime import datetime, timezone
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from fastapi import HTTPException
 from app.db.models import Observation, MeasurementWindow
+from app.pgl.client import PGLClient, PGLConnectionError
+
+logger = logging.getLogger(__name__)
 
 async def finalize_measurement_window(
     db: AsyncSession, target_id: str, window_start: datetime, window_end: datetime
@@ -61,6 +66,21 @@ async def finalize_measurement_window(
     )
     
     db.add(window)
+    await db.flush()
+    
+    try:
+        pgl_client = PGLClient()
+        receipt_id = await pgl_client.mint_receipt("window_finalized", {
+            "window_id": str(window.id),
+            "target_id": target_id,
+            "sample_count": sample_count
+        })
+        window.pgl_evidence_id = receipt_id
+        logger.info(f"Minted PGL receipt {receipt_id} for measurement window {window.id}")
+    except PGLConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    
     await db.commit()
+    await db.refresh(window)
     
     return window

@@ -616,3 +616,74 @@ class TrustCertificate(Base):
     __table_args__ = (
         Index("idx_trust_certs_target", "target_id", "issued_at"),
     )
+
+class BondState(str, enum.Enum):
+    draft = "draft"
+    funded = "funded"
+    active = "active"
+    breach_pending = "breach_pending"
+    slashed = "slashed"
+    released = "released"
+
+class ChallengeState(str, enum.Enum):
+    pending = "pending"
+    verifying = "verifying"
+    upheld = "upheld"
+    rejected = "rejected"
+
+class ProviderBond(Base):
+    __tablename__ = "vnp_provider_bonds"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider_id = Column(UUID(as_uuid=True), ForeignKey("vnp_providers.id", ondelete="CASCADE"), nullable=False)
+    target_api_id = Column(String(200), nullable=False)
+    state = Column(Enum(BondState, name="bond_state_enum", create_type=False), nullable=False, default=BondState.draft)
+    amount_minor = Column(BigInteger, nullable=False)
+    currency = Column(String(3), nullable=False, default="USD")
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    funded_at = Column(DateTime(timezone=True))
+    expires_at = Column(DateTime(timezone=True))
+    
+    __table_args__ = (
+        Index("idx_provider_bonds_target_state", "target_api_id", "state"),
+    )
+
+class BondCondition(Base):
+    __tablename__ = "vnp_bond_conditions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bond_id = Column(UUID(as_uuid=True), ForeignKey("vnp_provider_bonds.id", ondelete="CASCADE"), nullable=False)
+    metric_type = Column(String(50), nullable=False) # e.g., 'p99_latency_ms', 'vabp_score'
+    operator = Column(String(10), nullable=False)    # e.g., '<=', '>='
+    threshold_value = Column(Float, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+class BondChallenge(Base):
+    __tablename__ = "vnp_challenges"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bond_id = Column(UUID(as_uuid=True), ForeignKey("vnp_provider_bonds.id", ondelete="CASCADE"), nullable=False)
+    challenger_id = Column(String(100), nullable=False)
+    state = Column(Enum(ChallengeState, name="challenge_state_enum", create_type=False), nullable=False, default=ChallengeState.pending)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    resolved_at = Column(DateTime(timezone=True))
+
+class ChallengeEvidence(Base):
+    __tablename__ = "vnp_challenge_evidence"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    challenge_id = Column(UUID(as_uuid=True), ForeignKey("vnp_challenges.id", ondelete="CASCADE"), nullable=False)
+    measurement_window_id = Column(UUID(as_uuid=True), ForeignKey("vnp_measurement_windows.id"), nullable=True)
+    vabp_run_id = Column(UUID(as_uuid=True), ForeignKey("vnp_vabp_runs.id"), nullable=True)
+    evidence_payload = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+class BondResolution(Base):
+    __tablename__ = "vnp_resolutions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    challenge_id = Column(UUID(as_uuid=True), ForeignKey("vnp_challenges.id", ondelete="CASCADE"), nullable=False)
+    action = Column(String(50), nullable=False) # 'slash', 'release', 'dismiss'
+    amount_minor = Column(BigInteger, nullable=False)
+    pgl_receipt_id = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)

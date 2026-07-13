@@ -12,6 +12,7 @@ from app.db.models import (
     ProbeEvent, UsageEvent, Api, Customer, Project, SdkCredential, RoutePolicy, Provider, ProbeResultState,
     Node, NodeKey, Observation
 )
+from app.pgl.client import PGLClient, PGLConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -331,6 +332,20 @@ async def ingest_observations_batches(
             rejected += 1
 
     await db.commit()
+    
+    if accepted > 0:
+        pgl_client = PGLClient()
+        event_data = {
+            "batch_size": accepted,
+            "target_ids": list(set(obs.target_id for obs in batch.observations))
+        }
+        try:
+            receipt_id = await pgl_client.mint_receipt("observation_batch_ingest", event_data)
+            logger.info(f"Minted PGL receipt {receipt_id} for batch")
+        except PGLConnectionError as e:
+            # Reverting is an option but the prompt implies we bubble it to 503
+            # or fail-safe. If we raise HTTPException, Fastapi returns error.
+            raise HTTPException(status_code=503, detail=str(e))
     
     return {
         "accepted": accepted,

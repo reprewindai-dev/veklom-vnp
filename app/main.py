@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.db.database import engine, get_db
 from app.db.models import ProbeEvent
-from app.api.routers import badges, claims, nexus, status as status_router, vnp_ingest, vnp_stream, vabp
+from app.api.routers import badges, claims, nexus, status as status_router, vnp_ingest, vnp_stream, vabp, staking
 from app.batch import ingest as batch_ingest
 
 logging.basicConfig(
@@ -92,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(claims.router, prefix="/api/v1")
     app.include_router(badges.router, prefix="/api/v1")
     app.include_router(vabp.router, prefix="/api/v1")
+    app.include_router(staking.router, prefix="/api/v1")
     app.include_router(batch_ingest.router)
     app.include_router(status_router.router)
 

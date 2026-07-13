@@ -1,0 +1,8 @@
+- `[x]` Add PR 3 models (vnp_scores)
+- `[x]` Add PR 4 models (vnp_vabp_runs, vnp_vabp_test_results, vnp_trust_certificates)
+- `[x]` Generate Alembic migrations for PR 3 and 4
+- `[x]` Create VABP ephemeral sandbox endpoints (vabp.py)
+- `[x]` Register VABP router in main.py
+- `[x]` Test VABP functionality locally
+- `[x]` Commit and push to `devin/vabp-sandbox-certification`
+- `[x]` Update implementation plan / walkthrough
