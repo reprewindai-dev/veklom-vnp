@@ -363,7 +363,8 @@ async def ingest_observations_batches(
                         for bond in bonds:
                             await engine.evaluate_bond_for_slash(bond.id)
             
-            asyncio.create_task(evaluate_targets(event_data["target_ids"]))
+            # URGENY CONTAINMENT: Slashing engine disabled pending review
+            # asyncio.create_task(evaluate_targets(event_data["target_ids"]))
             
         except PGLConnectionError as e:
             # Reverting is an option but the prompt implies we bubble it to 503
