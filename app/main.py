@@ -16,6 +16,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -130,12 +131,25 @@ def create_app() -> FastAPI:
 
     @app.get("/api/v1/beacon/topology")
     async def get_topology(db: AsyncSession = Depends(get_db)):
-        """Truthful topology telemetry derived only from database evidence.
+        """Truthful topology telemetry for the standalone VNP surface.
 
-        The physical node registry with signed heartbeats is not yet wired;
-        until it is, regions are reported from actual probe observations and
-        no fictional node, stake, CPU or pool-utilization values are emitted.
+        BYOS owns the active five-node VNP topology frame. The standalone
+        product surface proxies that source of truth first, then falls back to
+        its local database observations without inventing nodes.
         """
+        byos_url = settings.byos_backend_url.rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{byos_url}/api/v1/beacon/topology")
+            if response.is_success:
+                return response.json()
+            logger.warning(
+                "BYOS topology unavailable for standalone VNP: HTTP %s",
+                response.status_code,
+            )
+        except Exception as exc:
+            logger.warning("BYOS topology request failed for standalone VNP: %s", exc)
+
         rows = (
             await db.execute(
                 select(
@@ -158,9 +172,21 @@ def create_app() -> FastAPI:
 
         return {
             "topology": {
+                "nodes": [],
                 "networkStatus": "ACTIVE" if regions else "INSUFFICIENT_EVIDENCE",
                 "activeRegions": len(regions),
                 "regions": regions,
+                "eventsLog": [
+                    "BYOS topology unavailable; reporting standalone observation regions only."
+                    if regions
+                    else "BYOS topology unavailable; no standalone region observations recorded."
+                ],
+                "ledgerFeed": [],
+                "totalSettledUsd": 0.0,
+                "activeNodes": 0,
+                "expectedNodes": 5,
+                "isActiveStorm": False,
+                "safetyGuardActive": True,
                 "node_registry": "Not Yet Wired",
                 "securityLevel": "VNP Methodology v1.0",
                 "features": {

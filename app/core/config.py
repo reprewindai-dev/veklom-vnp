@@ -35,6 +35,7 @@ class Settings(BaseSettings):
         "DATABASE_URL",
         "postgresql+asyncpg://postgres:postgres@localhost:5432/veklom",
     )
+    byos_backend_url: str = os.getenv("BYOS_BACKEND_URL", "https://api.veklom.com")
     pgl_service_url: str = os.getenv("PGL_SERVICE_URL", "http://pgl.veklom.internal")
     pgl_signing_key: str = os.getenv("PGL_SIGNING_KEY", "dev_only_unsafe_key")
 
