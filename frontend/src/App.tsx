@@ -151,9 +151,9 @@ export default function VNPLandingPage() {
               <div className="space-y-4">
                 {[
                   { name: 'Physical measurements', weight: 'Live' },
-                  { name: 'Signed telemetry', weight: 'Partial' },
+                  { name: 'Signed telemetry', weight: 'Live' },
                   { name: 'Route beacons', weight: 'Connected' },
-                  { name: 'Robust scoring', weight: 'Partial' },
+                  { name: 'Robust scoring', weight: 'Connected' },
                   { name: 'x402 settlement evidence', weight: 'Connected' },
                   { name: 'PGL audit trails', weight: 'Connected' },
                   { name: 'Agent/runtime enforcement', weight: 'Auth Required' }
