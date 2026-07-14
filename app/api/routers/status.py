@@ -62,12 +62,60 @@ class CapabilityStatusResponse(BaseModel):
     capabilities: List[CapabilityStatus]
 
 
+VNP_METHODOLOGY_CAPABILITY_MAP = {
+    "Physical measurements": "vnp_physical_probes",
+    "Signed telemetry": "vnp_signed_telemetry",
+    "Robust scoring": "vnp_regional_scoring",
+    "x402 settlement evidence": "vnp_usage_metering",
+    "PGL audit trails": "pgl_audit_trails",
+    "Agent/runtime enforcement": "agent_runtime_enforcement",
+}
+
+
 def _freshness(last_event: Optional[datetime]) -> Optional[int]:
     if last_event is None:
         return None
     if last_event.tzinfo is None:
         last_event = last_event.replace(tzinfo=timezone.utc)
     return max(0, int((datetime.now(timezone.utc) - last_event).total_seconds()))
+
+
+def _methodology_capability(section: str, status: str) -> CapabilityStatus:
+    capability_id = VNP_METHODOLOGY_CAPABILITY_MAP[section]
+    operational_state = "Connected" if status == "Live" else status
+    return CapabilityStatus(
+        capability_id=capability_id,
+        implementation_state=status,
+        operational_state=operational_state,
+        evidence_count=1,
+        last_successful_event=None,
+        freshness_seconds=None,
+        reason=f"BYOS methodology reports '{section}' as {status}",
+        required_configuration=[],
+    )
+
+
+async def _byos_methodology_capabilities(settings) -> dict[str, CapabilityStatus]:
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{settings.byos_backend_url.rstrip('/')}/api/v1/vnp/methodology"
+            )
+        response.raise_for_status()
+        payload = response.json()
+        capabilities: dict[str, CapabilityStatus] = {}
+        for item in payload.get("verification_stack", []):
+            section = item.get("section")
+            status = item.get("status")
+            if (
+                section in VNP_METHODOLOGY_CAPABILITY_MAP
+                and status in APPROVED_STATUS_VOCABULARY
+            ):
+                capability = _methodology_capability(section, status)
+                capabilities[capability.capability_id] = capability
+        return capabilities
+    except Exception:
+        return {}
 
 
 async def _evidence_capability(
@@ -170,28 +218,51 @@ async def _byos_node_registry_capability(settings) -> CapabilityStatus:
 async def get_capabilities(db: AsyncSession = Depends(get_db)) -> CapabilityStatusResponse:
     settings = get_settings()
     capabilities: List[CapabilityStatus] = []
+    byos_methodology = await _byos_methodology_capabilities(settings)
 
     try:
-        capabilities.append(
-            await _evidence_capability(
-                db,
+        for capability_id, model, timestamp_column, required_configuration, reason in (
+            (
                 "vnp_physical_probes",
                 ProbeEvent,
                 ProbeEvent.occurred_at,
                 ["node_keypair", "node_registration", "region_assignment"],
                 "No signed observations received",
-            )
-        )
-        capabilities.append(
-            await _evidence_capability(
-                db,
+            ),
+            (
                 "vnp_regional_scoring",
                 RegionalTelemetry,
                 RegionalTelemetry.measured_at,
                 ["finalized_measurement_windows"],
                 "No finalized regional telemetry windows",
+            ),
+            (
+                "vnp_usage_metering",
+                UsageEvent,
+                UsageEvent.occurred_at,
+                ["sdk_credentials"],
+                "No signed usage events received",
+            ),
+        ):
+            capabilities.append(
+                byos_methodology.get(capability_id)
+                or await _evidence_capability(
+                    db,
+                    capability_id,
+                    model,
+                    timestamp_column,
+                    required_configuration,
+                    reason,
+                )
             )
-        )
+
+        if "vnp_signed_telemetry" in byos_methodology:
+            capabilities.append(byos_methodology["vnp_signed_telemetry"])
+        if "pgl_audit_trails" in byos_methodology:
+            capabilities.append(byos_methodology["pgl_audit_trails"])
+        if "agent_runtime_enforcement" in byos_methodology:
+            capabilities.append(byos_methodology["agent_runtime_enforcement"])
+
         capabilities.append(
             await _evidence_capability(
                 db,
@@ -202,21 +273,12 @@ async def get_capabilities(db: AsyncSession = Depends(get_db)) -> CapabilityStat
                 "No provider claims submitted",
             )
         )
-        capabilities.append(
-            await _evidence_capability(
-                db,
-                "vnp_usage_metering",
-                UsageEvent,
-                UsageEvent.occurred_at,
-                ["sdk_credentials"],
-                "No signed usage events received",
-            )
-        )
         db_reachable = True
     except Exception:
         db_reachable = False
         capabilities = [
-            CapabilityStatus(
+            byos_methodology.get(capability_id)
+            or CapabilityStatus(
                 capability_id=capability_id,
                 implementation_state="Partially Implemented",
                 operational_state="Disconnected",
@@ -231,6 +293,13 @@ async def get_capabilities(db: AsyncSession = Depends(get_db)) -> CapabilityStat
                 "vnp_usage_metering",
             )
         ]
+        for capability_id in (
+            "vnp_signed_telemetry",
+            "pgl_audit_trails",
+            "agent_runtime_enforcement",
+        ):
+            if capability_id in byos_methodology:
+                capabilities.append(byos_methodology[capability_id])
 
     capabilities.append(await _byos_node_registry_capability(settings))
     capabilities.append(
