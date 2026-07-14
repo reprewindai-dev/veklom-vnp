@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   veklom-vnp-standalone:
     build: 
@@ -12,7 +10,10 @@ services:
       - "8089:8089"
     environment:
       # Connect to the existing Postgres database running in the Coolify network
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@llwfyzhnft87bz6brddiax1z:5432/veklom
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be configured}
+      VNP_ENV: production
+      BYOS_BACKEND_URL: https://api.veklom.com
+      VNP_CORS_ALLOW_ORIGINS: https://veklom.com,https://www.veklom.com,https://vnp.veklom.com,https://control.veklom.com,https://veklom.dev
     labels:
       - traefik.enable=true
       - traefik.http.routers.vnp-standalone-http.entrypoints=http
