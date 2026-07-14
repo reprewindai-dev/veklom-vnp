@@ -27,6 +27,15 @@ def upgrade() -> None:
 
     op.execute(
         """
+        DELETE FROM vnp_nodes
+        WHERE region_code IN (
+            'us-east-1-ash',
+            'us-west-1-hil',
+            'eu-central-1-nur',
+            'eu-central-1-fal',
+            'ap-southeast-1-sin'
+        );
+
         UPDATE vnp_nodes
         SET
             site_code = CASE region_code
