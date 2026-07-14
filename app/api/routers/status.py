@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List, Optional
 
+import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -113,6 +114,58 @@ def _not_yet_wired(capability_id: str, reason: str, required: List[str]) -> Capa
     )
 
 
+async def _byos_node_registry_capability(settings) -> CapabilityStatus:
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{settings.byos_backend_url.rstrip('/')}/api/v1/beacon/topology"
+            )
+        response.raise_for_status()
+        topology = response.json().get("topology", {})
+        active_nodes = int(topology.get("activeNodes") or 0)
+        expected_nodes = int(topology.get("expectedNodes") or 5)
+        nodes = topology.get("nodes") or []
+        keyed_nodes = sum(1 for node in nodes if int(node.get("activeKeyCount") or 0) > 0)
+        fresh_nodes = sum(1 for node in nodes if node.get("lastHeartbeat"))
+        last_heartbeat = max(
+            (node.get("lastHeartbeat") for node in nodes if node.get("lastHeartbeat")),
+            default=None,
+        )
+        if active_nodes >= expected_nodes and keyed_nodes >= expected_nodes:
+            return CapabilityStatus(
+                capability_id="vnp_node_registry",
+                implementation_state="Live",
+                operational_state="Connected",
+                evidence_count=active_nodes,
+                last_successful_event=last_heartbeat,
+                freshness_seconds=None,
+                reason=(
+                    f"BYOS topology reports {active_nodes}/{expected_nodes} connected "
+                    f"nodes with active signing keys"
+                ),
+                required_configuration=[],
+            )
+        return CapabilityStatus(
+            capability_id="vnp_node_registry",
+            implementation_state="Partially Implemented",
+            operational_state="Config Incomplete",
+            evidence_count=active_nodes,
+            last_successful_event=last_heartbeat,
+            freshness_seconds=None,
+            reason=(
+                f"BYOS topology reports {active_nodes}/{expected_nodes} connected, "
+                f"{keyed_nodes}/{expected_nodes} keyed, {fresh_nodes}/{expected_nodes} heartbeating"
+            ),
+            required_configuration=["node_keypair", "node_registration", "region_assignment"],
+        )
+    except Exception:
+        return _not_yet_wired(
+            "vnp_node_registry",
+            "BYOS topology unavailable; cannot verify physical node registry or signed heartbeats",
+            ["byos_backend_url"],
+        )
+
+
 @router.get("/capabilities", response_model=CapabilityStatusResponse)
 async def get_capabilities(db: AsyncSession = Depends(get_db)) -> CapabilityStatusResponse:
     settings = get_settings()
@@ -179,13 +232,7 @@ async def get_capabilities(db: AsyncSession = Depends(get_db)) -> CapabilityStat
             )
         ]
 
-    capabilities.append(
-        _not_yet_wired(
-            "vnp_node_registry",
-            "Physical node registry and signed heartbeats not yet wired",
-            ["node_keypair", "node_registration", "region_assignment"],
-        )
-    )
+    capabilities.append(await _byos_node_registry_capability(settings))
     capabilities.append(
         _not_yet_wired(
             "vabp_certification",

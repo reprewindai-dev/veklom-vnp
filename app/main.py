@@ -187,11 +187,11 @@ def create_app() -> FastAPI:
                 "expectedNodes": 5,
                 "isActiveStorm": False,
                 "safetyGuardActive": True,
-                "node_registry": "Not Yet Wired",
+                "node_registry": "Disconnected",
                 "securityLevel": "VNP Methodology v1.0",
                 "features": {
                     "signed_probe_ingestion": "Connected",
-                    "node_heartbeats": "Not Yet Wired",
+                    "node_heartbeats": "Disconnected",
                     "vdf_time_lock": "Methodology Target",
                     "zk_snark_ready": "Methodology Target",
                 },
