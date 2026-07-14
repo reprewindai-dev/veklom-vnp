@@ -184,7 +184,7 @@ async def issue_certificate(run_id: uuid.UUID, db: AsyncSession = Depends(get_db
         score=run.total_score,
         passed_threshold=passed_threshold,
         expires_at=expires,
-        pgl_evidence_id=f"ev_vabp_{uuid.uuid4().hex[:12]}" # Mocked evidence ID
+        pgl_evidence_id=None,
     )
     
     db.add(cert)
