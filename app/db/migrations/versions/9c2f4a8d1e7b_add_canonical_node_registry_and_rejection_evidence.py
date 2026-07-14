@@ -34,8 +34,11 @@ def upgrade() -> None:
             'eu-central-1-nur',
             'eu-central-1-fal',
             'ap-southeast-1-sin'
-        );
-
+        )
+        """
+    )
+    op.execute(
+        """
         UPDATE vnp_nodes
         SET
             site_code = CASE region_code
