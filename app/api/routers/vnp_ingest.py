@@ -1,19 +1,20 @@
 import logging
 from typing import List, Dict, Any, Optional
+import hashlib
+import uuid
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Header, Body
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, Field
 
 from app.db.database import get_db
 from app.core.security import VNPEventVerifier, VNPSecurityError
+from app.core.targets import TARGET_PROFILES
 from app.db.models import (
-    ProbeEvent, UsageEvent, Api, Customer, Project, SdkCredential, RoutePolicy, Provider, ProbeResultState,
-    Node, NodeKey, Observation
+    ProbeEvent, UsageEvent, ProbeResultState,
+    Node, NodeKey, NodeHeartbeat, Observation, ObservationRejection
 )
-from app.pgl.client import PGLClient, PGLConnectionError
-from app.services.slashing_engine import SlashingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +59,10 @@ class CanonicalObservation(BaseModel):
     observation_id: str
     node_id: str
     region: str
+    site_code: str
     physical_location: str
     target_id: str
+    endpoint_url: str
     measurement_profile: str
     measurement_version: str
     started_at: datetime
@@ -67,18 +70,47 @@ class CanonicalObservation(BaseModel):
     dns_ms: Optional[int] = None
     tcp_ms: Optional[int] = None
     tls_ms: Optional[int] = None
+    write_ms: Optional[int] = None
     ttfb_ms: Optional[int] = None
+    body_ms: Optional[int] = None
     total_ms: Optional[int] = None
     http_status: Optional[int] = None
+    http_version: Optional[str] = None
+    tls_version: Optional[str] = None
+    tls_cipher: Optional[str] = None
+    transport_reachable: bool = False
+    semantic_assertion: Optional[bool] = None
     response_fingerprint: Optional[str] = None
     error_code: Optional[str] = None
+    error_category: Optional[str] = None
     sequence: int
     previous_observation_hash: Optional[str] = None
+    payload_digest: str
     signature_key_id: str
     signature: str
 
 class ObservationBatch(BaseModel):
     observations: List[CanonicalObservation]
+
+
+class Heartbeat(BaseModel):
+    heartbeat_id: str
+    node_id: str
+    site_code: str
+    timestamp: datetime
+    sequence: int
+    software_version: str
+    payload_digest: str
+    signature_key_id: str
+    signature: str
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 class UsageMeasurement(BaseModel):
     billable_units: int
@@ -125,6 +157,85 @@ def _map_error_class_to_state(success: bool, timeout: bool, error_class: Optiona
     if error_class == "transport_error":
         return ProbeResultState.transport_error
     return ProbeResultState.http_error
+
+
+@router.post("/heartbeats")
+async def ingest_heartbeat(
+    heartbeat: Heartbeat = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept a signed heartbeat from a registered physical VNP node."""
+    now = datetime.now(timezone.utc)
+    if not _is_uuid(heartbeat.node_id):
+        raise HTTPException(status_code=400, detail="invalid_node_id")
+    if heartbeat.timestamp > now + timedelta(minutes=2):
+        raise HTTPException(status_code=400, detail="future_timestamp")
+    if heartbeat.timestamp < now - timedelta(minutes=15):
+        raise HTTPException(status_code=400, detail="stale_heartbeat")
+
+    node_result = await db.execute(select(Node).where(Node.id == uuid.UUID(heartbeat.node_id)))
+    node = node_result.scalar_one_or_none()
+    key_result = await db.execute(
+        select(NodeKey).where(NodeKey.key_id == heartbeat.signature_key_id)
+    )
+    node_key = key_result.scalar_one_or_none()
+    if (
+        not node
+        or not node_key
+        or not node_key.active
+        or node_key.revoked_at
+        or node_key.node_id != node.id
+        or heartbeat.site_code != node.site_code
+    ):
+        raise HTTPException(status_code=403, detail="node_key_or_site_not_registered")
+
+    payload = heartbeat.model_dump(mode="json")
+    if heartbeat.payload_digest != VNPEventVerifier.payload_digest(payload):
+        raise HTTPException(status_code=400, detail="payload_digest_mismatch")
+    payload["signature"] = {
+        "alg": "Ed25519",
+        "key_id": heartbeat.signature_key_id,
+        "sig": heartbeat.signature,
+    }
+    try:
+        VNPEventVerifier.verify_event_signature(payload, node_key.public_key)
+    except VNPSecurityError as exc:
+        raise HTTPException(status_code=401, detail="invalid_signature") from exc
+
+    duplicate = await db.execute(
+        select(NodeHeartbeat.id).where(NodeHeartbeat.heartbeat_id == heartbeat.heartbeat_id)
+    )
+    if duplicate.first():
+        raise HTTPException(status_code=409, detail="duplicate_heartbeat")
+    latest = await db.execute(
+        select(NodeHeartbeat)
+        .where(NodeHeartbeat.node_id == node.id)
+        .order_by(NodeHeartbeat.sequence.desc())
+        .limit(1)
+    )
+    previous = latest.scalar_one_or_none()
+    if previous and heartbeat.sequence <= previous.sequence:
+        raise HTTPException(status_code=409, detail="non_monotonic_sequence")
+
+    db.add(
+        NodeHeartbeat(
+            heartbeat_id=heartbeat.heartbeat_id,
+            node_id=node.id,
+            sequence=heartbeat.sequence,
+            timestamp=heartbeat.timestamp,
+            software_version=heartbeat.software_version,
+            signature_key_id=heartbeat.signature_key_id,
+            signature=heartbeat.signature,
+            payload_digest=heartbeat.payload_digest,
+            created_at=now,
+        )
+    )
+    node.last_seen_at = heartbeat.timestamp
+    node.software_version = heartbeat.software_version
+    node.health_state = "standby"
+    await db.commit()
+    logger.info("Accepted signed heartbeat node=%s sequence=%s", node.id, heartbeat.sequence)
+    return {"accepted": True, "node_id": heartbeat.node_id, "sequence": heartbeat.sequence}
 
 
 @router.post("/probe-events")
@@ -229,82 +340,115 @@ async def ingest_observations_batches(
     accepted = 0
     rejected = 0
     deduplicated = 0
-
     now = datetime.now(timezone.utc)
 
+    async def reject(obs: CanonicalObservation, reason: str, details: Optional[Dict[str, Any]] = None):
+        nonlocal rejected
+        unsigned = obs.model_dump(mode="json", by_alias=True)
+        db.add(
+            ObservationRejection(
+                observation_id=obs.observation_id,
+                node_id=uuid.UUID(obs.node_id) if _is_uuid(obs.node_id) else None,
+                signature_key_id=obs.signature_key_id,
+                reason=reason,
+                payload_digest=VNPEventVerifier.payload_digest(unsigned),
+                received_at=now,
+                details=details or {},
+            )
+        )
+        rejected += 1
+
     for obs in batch.observations:
-        # 1. Reject events > 10 mins in future
-        if obs.started_at > now + timedelta(minutes=10):
-            rejected += 1
+        if obs.schema_version != "veklom.vnp.observation.v1":
+            await reject(obs, "invalid_schema")
+            continue
+        if obs.started_at > now + timedelta(minutes=2) or obs.completed_at > now + timedelta(minutes=2):
+            await reject(obs, "future_timestamp")
+            continue
+        if obs.completed_at < obs.started_at:
+            await reject(obs, "invalid_timestamp_order")
+            continue
+        target = TARGET_PROFILES.get(obs.target_id)
+        if (
+            not target
+            or obs.endpoint_url != target["endpoint_url"]
+            or obs.measurement_profile != target["measurement_profile"]
+        ):
+            await reject(obs, "invalid_target_assignment")
             continue
 
-        # 2. Check for duplicate observation_id
-        stmt = select(Observation.id).where(Observation.observation_id == obs.observation_id)
-        existing = await db.execute(stmt)
+        existing = await db.execute(
+            select(Observation.id).where(Observation.observation_id == obs.observation_id)
+        )
         if existing.first():
+            await reject(obs, "duplicate_observation")
             deduplicated += 1
             continue
 
-        # 3. Resolve Node and NodeKey
-        stmt = select(NodeKey).where(NodeKey.key_id == obs.signature_key_id)
-        result = await db.execute(stmt)
-        node_key = result.scalar_one_or_none()
-        
+        key_result = await db.execute(
+            select(NodeKey).where(NodeKey.key_id == obs.signature_key_id)
+        )
+        node_key = key_result.scalar_one_or_none()
         if not node_key or not node_key.active or node_key.revoked_at:
-            logger.warning(f"Invalid or revoked key {obs.signature_key_id}")
-            rejected += 1
+            await reject(obs, "unknown_or_inactive_key")
             continue
 
-        # Get the node to check region authorization
-        stmt = select(Node).where(Node.id == node_key.node_id)
-        result = await db.execute(stmt)
-        node = result.scalar_one_or_none()
-        
-        if not node or str(node.id) != obs.node_id or node.region_code != obs.region:
-            logger.warning(f"Node validation failed for {obs.observation_id}")
-            rejected += 1
+        node_result = await db.execute(select(Node).where(Node.id == node_key.node_id))
+        node = node_result.scalar_one_or_none()
+        if (
+            not node
+            or str(node.id) != obs.node_id
+            or node.site_code != obs.region
+            or node.site_code != getattr(obs, "site_code", obs.region)
+            or obs.physical_location != node.physical_location
+        ):
+            await reject(obs, "node_site_assignment")
             continue
 
-        # Verify Sequence and Previous Hash Continuity
-        stmt = (
+        last_result = await db.execute(
             select(Observation)
             .where(Observation.node_id == node.id)
             .where(Observation.target_id == obs.target_id)
             .order_by(Observation.sequence.desc())
             .limit(1)
         )
-        result = await db.execute(stmt)
-        last_obs = result.scalar_one_or_none()
-
+        last_obs = last_result.scalar_one_or_none()
         if last_obs:
+            expected_previous = hashlib.sha256(
+                VNPEventVerifier.canonicalize_payload(
+                    {
+                        "observation_id": last_obs.observation_id,
+                        "payload_digest": last_obs.payload_digest,
+                    }
+                )
+            ).hexdigest()
             if obs.sequence <= last_obs.sequence:
-                logger.warning(f"Sequence {obs.sequence} is older than last observed {last_obs.sequence} for target {obs.target_id}")
-                rejected += 1
+                await reject(obs, "non_monotonic_sequence")
                 continue
-            
-            expected_prev_hash = f"hash_{last_obs.signature[:16]}"
-            if obs.previous_observation_hash != expected_prev_hash and obs.previous_observation_hash != "bootstrap":
-                logger.warning(f"Previous hash mismatch. Expected {expected_prev_hash}, got {obs.previous_observation_hash}")
-                rejected += 1
+            if obs.previous_observation_hash != expected_previous:
+                await reject(obs, "previous_hash_mismatch")
                 continue
-
-        # 4. Verify Signature (Using VNPEventVerifier)
-        try:
-            raw_obs = obs.model_dump(mode="json", by_alias=True)
-            # Remove signature before verifying, if signature is generated from payload minus sig
-            # Wait, VNPEventVerifier signature logic expects the payload as signed by the node.
-            # Assuming payload contains signature but we verify against the rest or as the standard dictates.
-            VNPEventVerifier.verify_event_signature(raw_obs, node_key.public_key)
-        except VNPSecurityError as e:
-            logger.warning(f"Signature verification failed for {obs.observation_id}: {e}")
-            rejected += 1
+        elif obs.sequence != 1 or obs.previous_observation_hash not in (None, "bootstrap"):
+            await reject(obs, "invalid_initial_chain")
             continue
-            
-        # 5. Insert into DB
+
+        raw_obs = obs.model_dump(mode="json", by_alias=True)
+        actual_digest = VNPEventVerifier.payload_digest(raw_obs)
+        if obs.payload_digest != actual_digest:
+            await reject(obs, "payload_digest_mismatch")
+            continue
+        raw_obs["signature"] = {"alg": "Ed25519", "key_id": obs.signature_key_id, "sig": obs.signature}
         try:
-            new_obs = Observation(
+            VNPEventVerifier.verify_event_signature(raw_obs, node_key.public_key)
+        except VNPSecurityError:
+            await reject(obs, "invalid_signature")
+            continue
+
+        db.add(
+            Observation(
                 observation_id=obs.observation_id,
                 node_id=node.id,
+                site_code=node.site_code,
                 region=obs.region,
                 physical_location=obs.physical_location,
                 target_id=obs.target_id,
@@ -315,71 +459,39 @@ async def ingest_observations_batches(
                 dns_ms=obs.dns_ms,
                 tcp_ms=obs.tcp_ms,
                 tls_ms=obs.tls_ms,
+                write_ms=obs.write_ms,
                 ttfb_ms=obs.ttfb_ms,
+                body_ms=obs.body_ms,
                 total_ms=obs.total_ms,
                 http_status=obs.http_status,
+                http_version=obs.http_version,
+                tls_version=obs.tls_version,
+                tls_cipher=obs.tls_cipher,
+                transport_reachable=obs.transport_reachable,
+                semantic_assertion=obs.semantic_assertion,
                 response_fingerprint=obs.response_fingerprint,
                 error_code=obs.error_code,
+                error_category=obs.error_category,
                 sequence=obs.sequence,
                 previous_observation_hash=obs.previous_observation_hash,
                 signature_key_id=obs.signature_key_id,
                 signature=obs.signature,
-                created_at=now
+                payload_digest=obs.payload_digest,
+                created_at=now,
             )
-            db.add(new_obs)
-            accepted += 1
-        except Exception as e:
-            logger.error(f"Failed to insert observation {obs.observation_id}: {e}")
-            rejected += 1
+        )
+        accepted += 1
+        node.last_seen_at = now
+        node.health_state = "live"
 
     await db.commit()
-    
-    if accepted > 0:
-        pgl_client = PGLClient()
-        event_data = {
-            "batch_size": accepted,
-            "target_ids": list(set(obs.target_id for obs in batch.observations))
-        }
-        try:
-            receipt_id = await pgl_client.mint_receipt("observation_batch_ingest", event_data)
-            logger.info(f"Minted PGL receipt {receipt_id} for batch")
-            
-            # Fire the central slashing engine to evaluate bonds for the affected targets
-            # Run in the background so it doesn't block ingestion
-            import asyncio
-            from app.db.models import ProviderBond, BondState
-            
-            async def evaluate_targets(targets):
-                for target_id in targets:
-                    stmt = select(ProviderBond).where(
-                        ProviderBond.target_api_id == target_id,
-                        ProviderBond.state.in_([BondState.active, BondState.funded])
-                    )
-                    res = await db.execute(stmt)
-                    bonds = res.scalars().all()
-                    
-                    if bonds:
-                        engine = SlashingEngine(db)
-                        for bond in bonds:
-                            await engine.evaluate_bond_for_slash(bond.id)
-            
-            # URGENY CONTAINMENT: Slashing engine is contained behind config flag
-            from app.core.config import get_settings
-            if get_settings().vnp_autonomous_slashing_enabled:
-                asyncio.create_task(evaluate_targets(event_data["target_ids"]))
-            else:
-                logger.info(f"Skipping VNP autonomous slashing for targets {event_data['target_ids']}: Containment Active.")
-                
-        except PGLConnectionError as e:
-            # Reverting is an option but the prompt implies we bubble it to 503
-            # or fail-safe. If we raise HTTPException, Fastapi returns error.
-            raise HTTPException(status_code=503, detail=str(e))
-    
-    return {
-        "accepted": accepted,
-        "rejected": rejected,
-        "deduplicated": deduplicated
-    }
+    logger.info(
+        "VNP observation batch processed: accepted=%s rejected=%s deduplicated=%s",
+        accepted,
+        rejected,
+        deduplicated,
+    )
+    return {"accepted": accepted, "rejected": rejected, "deduplicated": deduplicated}
 
 
 @router.post("/usage-events")

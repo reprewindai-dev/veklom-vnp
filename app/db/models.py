@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Integer, Float, Boolean, JSON, ForeignKey, DateTime, Enum, Numeric, BigInteger, UniqueConstraint, Index, text
+    Column, String, Integer, Float, Boolean, ForeignKey, DateTime, Enum, Numeric, BigInteger, UniqueConstraint, Index
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -119,7 +119,7 @@ class ApiRegion(Base):
 
     __table_args__ = (
         UniqueConstraint("api_id", "region_code", name="uq_vnp_api_regions_api_region"),
-        Index("idx_api_regions_lookup", "api_id", "region_code", postgresql_where=(active == True)),
+        Index("idx_api_regions_lookup", "api_id", "region_code", postgresql_where=active),
     )
 
     api = relationship("Api", back_populates="regions")
@@ -461,10 +461,18 @@ class Node(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
+    site_code = Column(String(50), nullable=False, unique=True)
     physical_location = Column(String(255), nullable=False)
     region_code = Column(String(50), nullable=False, unique=True)
     macro_region = Column(String(50), nullable=False)
     jurisdiction = Column(String(100), nullable=False)
+    provider = Column(String(50), nullable=False, default="Hetzner")
+    platform = Column(String(50), nullable=False, default="Coolify")
+    coolify_server_uuid = Column(String(100), nullable=False)
+    coolify_application_uuid = Column(String(100))
+    image_digest = Column(String(255))
+    probe_deployed_at = Column(DateTime(timezone=True))
+    key_verified_at = Column(DateTime(timezone=True))
     gdpr_zone = Column(Boolean, nullable=False, default=False)
     software_version = Column(String(50))
     last_seen_at = Column(DateTime(timezone=True))
@@ -491,10 +499,13 @@ class NodeHeartbeat(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     node_id = Column(UUID(as_uuid=True), ForeignKey("vnp_nodes.id", ondelete="CASCADE"), nullable=False)
+    heartbeat_id = Column(String(100), nullable=False, unique=True)
+    sequence = Column(Integer, nullable=False)
     timestamp = Column(DateTime(timezone=True), nullable=False)
     software_version = Column(String(50), nullable=False)
     signature_key_id = Column(String(100), nullable=False)
     signature = Column(String, nullable=False)
+    payload_digest = Column(String(128), nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
 class Observation(Base):
@@ -503,6 +514,7 @@ class Observation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     observation_id = Column(String(100), unique=True, nullable=False)
     node_id = Column(UUID(as_uuid=True), ForeignKey("vnp_nodes.id"), nullable=False)
+    site_code = Column(String(50), nullable=False)
     region = Column(String(50), nullable=False)
     physical_location = Column(String(255), nullable=False)
     target_id = Column(String(200), nullable=False)
@@ -513,20 +525,42 @@ class Observation(Base):
     dns_ms = Column(Integer)
     tcp_ms = Column(Integer)
     tls_ms = Column(Integer)
+    write_ms = Column(Integer)
     ttfb_ms = Column(Integer)
+    body_ms = Column(Integer)
     total_ms = Column(Integer)
     http_status = Column(Integer)
+    http_version = Column(String(20))
+    tls_version = Column(String(50))
+    tls_cipher = Column(String(100))
+    transport_reachable = Column(Boolean, nullable=False, default=False)
+    semantic_assertion = Column(Boolean)
     response_fingerprint = Column(String)
     error_code = Column(String)
+    error_category = Column(String(100))
     sequence = Column(Integer, nullable=False)
     previous_observation_hash = Column(String)
     signature_key_id = Column(String(100), nullable=False)
     signature = Column(String, nullable=False)
+    payload_digest = Column(String(128), nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     __table_args__ = (
         Index("idx_observations_target_region_time", "target_id", "region", "started_at"),
     )
+
+
+class ObservationRejection(Base):
+    __tablename__ = "vnp_observation_rejections"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    observation_id = Column(String(100), nullable=False, index=True)
+    node_id = Column(UUID(as_uuid=True), nullable=True)
+    signature_key_id = Column(String(100))
+    reason = Column(String(100), nullable=False)
+    payload_digest = Column(String(128), nullable=False)
+    received_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    details = Column(JSONB, nullable=False, default={})
 
 class MeasurementWindow(Base):
     __tablename__ = "vnp_measurement_windows"

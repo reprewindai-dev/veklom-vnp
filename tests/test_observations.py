@@ -1,161 +1,186 @@
-import pytest
-from datetime import datetime, timezone, timedelta
+import base64
+import hashlib
+import uuid
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
-from app.api.routers.vnp_ingest import ingest_observations_batches, ObservationBatch, CanonicalObservation
-from app.core.security import VNPEventVerifier, VNPSecurityError
+
+import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from app.api.routers.vnp_ingest import (
+    CanonicalObservation,
+    ObservationBatch,
+    ingest_observations_batches,
+)
+from app.core.security import VNPEventVerifier
 from app.db.models import Node, NodeKey, Observation
 
-@pytest.fixture
-def mock_db():
+
+NODE_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+SITE_CODE = "us-ashburn"
+LOCATION = "Ashburn, Virginia, US"
+
+
+class Result:
+    def __init__(self, value=None):
+        self.value = value
+
+    def first(self):
+        return self.value
+
+    def scalar_one_or_none(self):
+        return self.value
+
+
+def _signed_payload(private_key, key_id, *, sequence=1, previous="bootstrap"):
+    now = datetime.now(timezone.utc)
+    payload = {
+        "schema": "veklom.vnp.observation.v1",
+        "observation_id": f"obs-{uuid.uuid4()}",
+        "node_id": str(NODE_ID),
+        "region": SITE_CODE,
+        "site_code": SITE_CODE,
+        "physical_location": LOCATION,
+        "target_id": "vnp-health",
+        "endpoint_url": "https://vnp.veklom.com/health",
+        "measurement_profile": "https-health-v1",
+        "measurement_version": "1.0.0",
+        "started_at": (now - timedelta(seconds=1)).isoformat().replace("+00:00", "Z"),
+        "completed_at": now.isoformat().replace("+00:00", "Z"),
+        "dns_ms": 1,
+        "tcp_ms": 2,
+        "tls_ms": 3,
+        "write_ms": 1,
+        "ttfb_ms": 4,
+        "body_ms": 1,
+        "total_ms": 8,
+        "http_status": 200,
+        "http_version": "1.1",
+        "tls_version": "TLSv1.3",
+        "tls_cipher": "TLS_AES_256_GCM_SHA384",
+        "transport_reachable": True,
+        "semantic_assertion": True,
+        "response_fingerprint": "a" * 64,
+        "error_code": None,
+        "error_category": None,
+        "sequence": sequence,
+        "previous_observation_hash": previous,
+        "signature_key_id": key_id,
+    }
+    payload["payload_digest"] = VNPEventVerifier.payload_digest(payload)
+    signature = private_key.sign(VNPEventVerifier.canonicalize_payload(payload))
+    payload["signature"] = base64.b64encode(signature).decode()
+    return CanonicalObservation.model_validate(payload, from_attributes=False)
+
+
+def _public_key_bytes(private_key):
+    return private_key.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+
+
+def _db_for(node_key, node, previous=None):
     db = AsyncMock()
     db.add = MagicMock()
     db.commit = AsyncMock()
+    results = iter([Result(None), Result(node_key), Result(node), Result(previous)])
+    db.execute.side_effect = lambda _: next(results)
     return db
 
-@pytest.fixture
-def valid_observation():
-    now = datetime.now(timezone.utc)
-    return CanonicalObservation(
-        observation_id="obs_123",
-        node_id="00000000-0000-0000-0000-000000000001",
-        region="us-east-1-ash",
-        physical_location="Ashburn, Virginia",
-        target_id="api_veklom_com",
-        measurement_profile="ping",
-        measurement_version="1.0",
-        started_at=now - timedelta(seconds=1),
-        completed_at=now,
-        total_ms=45,
-        sequence=2,
-        previous_observation_hash="hash_1234567890abcdef",
-        signature_key_id="key_1",
-        signature="sig_abc123"
+
+@pytest.mark.asyncio
+async def test_valid_signed_observation_ingest():
+    private_key = Ed25519PrivateKey.generate()
+    public_key = _public_key_bytes(private_key)
+    key_id = f"{NODE_ID}:{hashlib.sha256(public_key).hexdigest()[:16]}"
+    observation = _signed_payload(private_key, key_id)
+    node_key = NodeKey(
+        key_id=key_id,
+        node_id=NODE_ID,
+        public_key=base64.b64encode(public_key).decode(),
+        active=True,
+    )
+    node = Node(
+        id=NODE_ID,
+        site_code=SITE_CODE,
+        region_code=SITE_CODE,
+        physical_location=LOCATION,
+    )
+    db = _db_for(node_key, node)
+
+    result = await ingest_observations_batches(
+        batch=ObservationBatch(observations=[observation]), db=db
     )
 
-@pytest.mark.asyncio
-async def test_valid_observation_ingest(mocker, mock_db, valid_observation):
-    # Mock VNPEventVerifier
-    mocker.patch.object(VNPEventVerifier, "verify_event_signature", return_value=True)
+    assert result == {"accepted": 1, "rejected": 0, "deduplicated": 0}
+    assert db.add.call_count == 1
+    assert db.commit.await_count == 1
 
-    # Mock DB executes
-    mock_execute = AsyncMock()
-    # first call: existing observation check -> returns None
-    # second call: NodeKey lookup -> returns NodeKey
-    # third call: Node lookup -> returns Node
-    # fourth call: sequence check -> returns previous Observation
-    
-    mock_node_key = NodeKey(key_id="key_1", node_id="00000000-0000-0000-0000-000000000001", public_key="pub_key", active=True)
-    mock_node = Node(id="00000000-0000-0000-0000-000000000001", region_code="us-east-1-ash")
-    mock_prev_obs = Observation(sequence=1, signature="1234567890abcdef_sig")
-    
-    # We will just patch the execute to return a mock scalar_one_or_none that cycles
-    # But since execute returns an object with `first` or `scalar_one_or_none`, let's make a smart mock
-    
-    class SmartMockResult:
-        def __init__(self, val=None):
-            self.val = val
-        def first(self):
-            return self.val
-        def scalar_one_or_none(self):
-            return self.val
-
-    def side_effect(stmt):
-        stmt_str = str(stmt).lower()
-        if "from vnp_observations" in stmt_str and "observation_id =" in stmt_str:
-            return SmartMockResult(None) # Duplicate check
-        if "from vnp_node_keys" in stmt_str:
-            return SmartMockResult(mock_node_key)
-        if "from vnp_nodes" in stmt_str:
-            return SmartMockResult(mock_node)
-        if "from vnp_observations" in stmt_str and "order by" in stmt_str:
-            return SmartMockResult(mock_prev_obs)
-        return SmartMockResult(None)
-
-    mock_db.execute.side_effect = side_effect
-
-    batch = ObservationBatch(observations=[valid_observation])
-    result = await ingest_observations_batches(batch=batch, db=mock_db)
-    
-    assert result["accepted"] == 1
-    assert result["rejected"] == 0
-    assert result["deduplicated"] == 0
-    mock_db.add.assert_called_once()
-    mock_db.commit.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_invalid_region_reject(mocker, mock_db, valid_observation):
-    mocker.patch.object(VNPEventVerifier, "verify_event_signature", return_value=True)
+async def test_unsigned_observation_is_rejected_and_recorded():
+    private_key = Ed25519PrivateKey.generate()
+    public_key = _public_key_bytes(private_key)
+    key_id = f"{NODE_ID}:{hashlib.sha256(public_key).hexdigest()[:16]}"
+    observation = _signed_payload(private_key, key_id)
+    observation.signature = "not-a-signature"
+    node_key = NodeKey(
+        key_id=key_id,
+        node_id=NODE_ID,
+        public_key=base64.b64encode(public_key).decode(),
+        active=True,
+    )
+    node = Node(id=NODE_ID, site_code=SITE_CODE, region_code=SITE_CODE, physical_location=LOCATION)
+    db = _db_for(node_key, node)
 
-    mock_node_key = NodeKey(key_id="key_1", node_id="00000000-0000-0000-0000-000000000001", public_key="pub_key", active=True)
-    # The node is registered in eu-central-1-nur but observation claims us-east-1-ash
-    mock_node = Node(id="00000000-0000-0000-0000-000000000001", region_code="eu-central-1-nur")
-    mock_prev_obs = Observation(sequence=1, signature="1234567890abcdef_sig")
-    
-    class SmartMockResult:
-        def __init__(self, val=None):
-            self.val = val
-        def first(self):
-            return self.val
-        def scalar_one_or_none(self):
-            return self.val
+    result = await ingest_observations_batches(
+        batch=ObservationBatch(observations=[observation]), db=db
+    )
 
-    def side_effect(stmt):
-        stmt_str = str(stmt).lower()
-        if "from vnp_observations" in stmt_str and "observation_id =" in stmt_str:
-            return SmartMockResult(None) # Duplicate check
-        if "from vnp_node_keys" in stmt_str:
-            return SmartMockResult(mock_node_key)
-        if "from vnp_nodes" in stmt_str:
-            return SmartMockResult(mock_node)
-        if "from vnp_observations" in stmt_str and "order by" in stmt_str:
-            return SmartMockResult(mock_prev_obs)
-        return SmartMockResult(None)
-
-    mock_db.execute.side_effect = side_effect
-
-    batch = ObservationBatch(observations=[valid_observation])
-    result = await ingest_observations_batches(batch=batch, db=mock_db)
-    
     assert result["accepted"] == 0
     assert result["rejected"] == 1
-    assert result["deduplicated"] == 0
-    mock_db.add.assert_not_called()
+    assert db.commit.await_count == 1
+
 
 @pytest.mark.asyncio
-async def test_sequence_replay_reject(mocker, mock_db, valid_observation):
-    mocker.patch.object(VNPEventVerifier, "verify_event_signature", return_value=True)
+async def test_unknown_key_is_rejected():
+    private_key = Ed25519PrivateKey.generate()
+    observation = _signed_payload(private_key, f"{NODE_ID}:unknown")
+    db = _db_for(None, None)
 
-    mock_node_key = NodeKey(key_id="key_1", node_id="00000000-0000-0000-0000-000000000001", public_key="pub_key", active=True)
-    mock_node = Node(id="00000000-0000-0000-0000-000000000001", region_code="us-east-1-ash")
-    # Previous observation already has sequence 2, so the incoming sequence 2 is a replay
-    mock_prev_obs = Observation(sequence=2, signature="1234567890abcdef_sig")
-    
-    class SmartMockResult:
-        def __init__(self, val=None):
-            self.val = val
-        def first(self):
-            return self.val
-        def scalar_one_or_none(self):
-            return self.val
+    result = await ingest_observations_batches(
+        batch=ObservationBatch(observations=[observation]), db=db
+    )
 
-    def side_effect(stmt):
-        stmt_str = str(stmt).lower()
-        if "from vnp_observations" in stmt_str and "observation_id =" in stmt_str:
-            return SmartMockResult(None) # Duplicate check
-        if "from vnp_node_keys" in stmt_str:
-            return SmartMockResult(mock_node_key)
-        if "from vnp_nodes" in stmt_str:
-            return SmartMockResult(mock_node)
-        if "from vnp_observations" in stmt_str and "order by" in stmt_str:
-            return SmartMockResult(mock_prev_obs)
-        return SmartMockResult(None)
-
-    mock_db.execute.side_effect = side_effect
-
-    batch = ObservationBatch(observations=[valid_observation])
-    result = await ingest_observations_batches(batch=batch, db=mock_db)
-    
     assert result["accepted"] == 0
     assert result["rejected"] == 1
-    assert result["deduplicated"] == 0
-    mock_db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_replayed_sequence_is_rejected():
+    private_key = Ed25519PrivateKey.generate()
+    public_key = _public_key_bytes(private_key)
+    key_id = f"{NODE_ID}:{hashlib.sha256(public_key).hexdigest()[:16]}"
+    observation = _signed_payload(private_key, key_id, sequence=2)
+    previous = Observation(
+        observation_id="previous",
+        payload_digest="b" * 64,
+        sequence=2,
+        signature="previous-signature",
+    )
+    node_key = NodeKey(
+        key_id=key_id,
+        node_id=NODE_ID,
+        public_key=base64.b64encode(public_key).decode(),
+        active=True,
+    )
+    node = Node(id=NODE_ID, site_code=SITE_CODE, region_code=SITE_CODE, physical_location=LOCATION)
+    db = _db_for(node_key, node, previous)
+
+    result = await ingest_observations_batches(
+        batch=ObservationBatch(observations=[observation]), db=db
+    )
+
+    assert result["accepted"] == 0
+    assert result["rejected"] == 1

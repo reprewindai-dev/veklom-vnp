@@ -16,7 +16,6 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-import httpx
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -26,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.database import engine, get_db
-from app.db.models import ProbeEvent
+from app.db.models import Node, NodeKey, NodeHeartbeat, Observation
 from app.api.routers import badges, claims, nexus, status as status_router, vnp_ingest, vnp_stream, vabp, staking
 from app.batch import ingest as batch_ingest
 
@@ -131,70 +130,79 @@ def create_app() -> FastAPI:
 
     @app.get("/api/v1/beacon/topology")
     async def get_topology(db: AsyncSession = Depends(get_db)):
-        """Truthful topology telemetry for the standalone VNP surface.
-
-        BYOS owns the active five-node VNP topology frame. The standalone
-        product surface proxies that source of truth first, then falls back to
-        its local database observations without inventing nodes.
-        """
-        byos_url = settings.byos_backend_url.rstrip("/")
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{byos_url}/api/v1/beacon/topology")
-            if response.is_success:
-                return response.json()
-            logger.warning(
-                "BYOS topology unavailable for standalone VNP: HTTP %s",
-                response.status_code,
+        """Compile topology only from the canonical physical node registry."""
+        now = datetime.now(timezone.utc)
+        freshness_limit = settings.vnp_node_heartbeat_freshness_seconds
+        nodes = (await db.execute(select(Node).order_by(Node.site_code))).scalars().all()
+        entries = []
+        for node in nodes:
+            key = (
+                await db.execute(
+                    select(NodeKey)
+                    .where(NodeKey.node_id == node.id)
+                    .where(NodeKey.active.is_(True))
+                    .where(NodeKey.revoked_at.is_(None))
+                    .order_by(NodeKey.created_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            heartbeat = (
+                await db.execute(
+                    select(NodeHeartbeat)
+                    .where(NodeHeartbeat.node_id == node.id)
+                    .order_by(NodeHeartbeat.timestamp.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            observation_count = (
+                await db.execute(
+                    select(func.count(Observation.id)).where(Observation.node_id == node.id)
+                )
+            ).scalar_one()
+            freshness = (
+                max(0, int((now - heartbeat.timestamp).total_seconds()))
+                if heartbeat
+                else None
             )
-        except Exception as exc:
-            logger.warning("BYOS topology request failed for standalone VNP: %s", exc)
-
-        rows = (
-            await db.execute(
-                select(
-                    ProbeEvent.api_region_code,
-                    func.count(ProbeEvent.id),
-                    func.max(ProbeEvent.occurred_at),
-                ).group_by(ProbeEvent.api_region_code)
+            heartbeat_fresh = freshness is not None and freshness <= freshness_limit
+            deployed = bool(node.probe_deployed_at and node.image_digest)
+            if not key or not node.registration_status:
+                state, reason = "Config Incomplete", "node registration incomplete"
+            elif not deployed:
+                state, reason = "Config Incomplete", "probe deployment evidence missing"
+            elif not heartbeat_fresh:
+                state, reason = "Disconnected", "fresh signed heartbeat missing"
+            elif not observation_count:
+                state, reason = "Insufficient Evidence", "no accepted observations"
+            else:
+                state, reason = "Live", "all operational evidence requirements satisfied"
+            entries.append(
+                {
+                    "nodeId": str(node.id),
+                    "name": node.name,
+                    "siteCode": node.site_code,
+                    "locationCode": node.region_code,
+                    "physicalLocation": node.physical_location,
+                    "provider": node.provider,
+                    "platform": node.platform,
+                    "coolifyServerUuid": node.coolify_server_uuid,
+                    "coolifyApplicationUuid": node.coolify_application_uuid,
+                    "softwareVersion": node.software_version,
+                    "heartbeatFreshnessSeconds": freshness,
+                    "observationCount": int(observation_count or 0),
+                    "state": state,
+                    "reason": reason,
+                }
             )
-        ).all()
-
-        regions = [
-            {
-                "region": region,
-                "observation_count": count,
-                "last_observation": last.isoformat() if last else None,
-                "status_str": "Connected" if count else "Insufficient Evidence",
-            }
-            for region, count, last in rows
-        ]
-
+        live = sum(entry["state"] == "Live" for entry in entries)
         return {
             "topology": {
-                "nodes": [],
-                "networkStatus": "ACTIVE" if regions else "INSUFFICIENT_EVIDENCE",
-                "activeRegions": len(regions),
-                "regions": regions,
-                "eventsLog": [
-                    "BYOS topology unavailable; reporting standalone observation regions only."
-                    if regions
-                    else "BYOS topology unavailable; no standalone region observations recorded."
-                ],
-                "ledgerFeed": [],
-                "totalSettledUsd": 0.0,
-                "activeNodes": 0,
+                "node_registry": "canonical_vnp_nodes",
+                "nodes": entries,
+                "networkStatus": "LIVE" if live == len(entries) and entries else "PARTIAL",
+                "activeRegions": live,
+                "regions": entries,
                 "expectedNodes": 5,
-                "isActiveStorm": False,
-                "safetyGuardActive": True,
-                "node_registry": "Not Yet Wired",
-                "securityLevel": "VNP Methodology v1.0",
-                "features": {
-                    "signed_probe_ingestion": "Connected",
-                    "node_heartbeats": "Not Yet Wired",
-                    "vdf_time_lock": "Methodology Target",
-                    "zk_snark_ready": "Methodology Target",
-                },
             }
         }
 
