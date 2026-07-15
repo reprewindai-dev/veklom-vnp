@@ -429,8 +429,25 @@ async def ingest_observations_batches(
                 await reject(obs, "non_monotonic_sequence")
                 continue
             if obs.previous_observation_hash != expected_previous:
-                await reject(obs, "previous_hash_mismatch")
-                continue
+                if obs.sequence == last_obs.sequence + 1:
+                    await reject(
+                        obs,
+                        "previous_hash_mismatch",
+                        {
+                            "expected_previous_hash": expected_previous,
+                            "received_previous_hash": obs.previous_observation_hash,
+                            "last_sequence": last_obs.sequence,
+                            "received_sequence": obs.sequence,
+                        },
+                    )
+                    continue
+                logger.warning(
+                    "Accepting observation after continuity gap node=%s target=%s last_sequence=%s received_sequence=%s",
+                    node.id,
+                    obs.target_id,
+                    last_obs.sequence,
+                    obs.sequence,
+                )
         elif obs.sequence != 1 or obs.previous_observation_hash not in (None, "bootstrap"):
             await reject(obs, "invalid_initial_chain")
             continue
