@@ -1,4 +1,5 @@
 import logging
+import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Header, Body
@@ -10,7 +11,7 @@ from app.db.database import get_db
 from app.core.security import VNPEventVerifier, VNPSecurityError
 from app.db.models import (
     ProbeEvent, UsageEvent, Api, Customer, Project, SdkCredential, RoutePolicy, Provider, ProbeResultState,
-    Node, NodeKey, Observation
+    Node, NodeKey, NodeHeartbeat, Observation
 )
 from app.pgl.client import PGLClient, PGLConnectionError
 from app.services.slashing_engine import SlashingEngine
@@ -80,6 +81,17 @@ class CanonicalObservation(BaseModel):
 class ObservationBatch(BaseModel):
     observations: List[CanonicalObservation]
 
+class Heartbeat(BaseModel):
+    heartbeat_id: str
+    node_id: str
+    site_code: str
+    timestamp: datetime
+    sequence: int
+    software_version: str
+    payload_digest: str
+    signature_key_id: str
+    signature: str
+
 class UsageMeasurement(BaseModel):
     billable_units: int
     unit_type: str
@@ -125,6 +137,95 @@ def _map_error_class_to_state(success: bool, timeout: bool, error_class: Optiona
     if error_class == "transport_error":
         return ProbeResultState.transport_error
     return ProbeResultState.http_error
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+@router.post("/heartbeats")
+async def ingest_heartbeat(
+    heartbeat: Heartbeat = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept a signed heartbeat from a registered physical VNP node."""
+    now = datetime.now(timezone.utc)
+    if not _is_uuid(heartbeat.node_id):
+        raise HTTPException(status_code=400, detail="invalid_node_id")
+    if heartbeat.timestamp > now + timedelta(minutes=2):
+        raise HTTPException(status_code=400, detail="future_timestamp")
+    if heartbeat.timestamp < now - timedelta(minutes=15):
+        raise HTTPException(status_code=400, detail="stale_heartbeat")
+
+    node_id = uuid.UUID(heartbeat.node_id)
+    node_result = await db.execute(select(Node).where(Node.id == node_id))
+    node = node_result.scalar_one_or_none()
+    key_result = await db.execute(
+        select(NodeKey).where(NodeKey.key_id == heartbeat.signature_key_id)
+    )
+    node_key = key_result.scalar_one_or_none()
+    expected_site_code = getattr(node, "site_code", None) or getattr(node, "region_code", None)
+    if (
+        not node
+        or not node_key
+        or not node_key.active
+        or node_key.revoked_at
+        or node_key.node_id != node.id
+        or heartbeat.site_code != expected_site_code
+    ):
+        raise HTTPException(status_code=403, detail="node_key_or_site_not_registered")
+
+    payload = heartbeat.model_dump(mode="json")
+    if heartbeat.payload_digest != VNPEventVerifier.payload_digest(payload):
+        raise HTTPException(status_code=400, detail="payload_digest_mismatch")
+    payload["signature"] = {
+        "alg": "Ed25519",
+        "key_id": heartbeat.signature_key_id,
+        "sig": heartbeat.signature,
+    }
+    try:
+        VNPEventVerifier.verify_event_signature(payload, node_key.public_key)
+    except VNPSecurityError as exc:
+        raise HTTPException(status_code=401, detail="invalid_signature") from exc
+
+    duplicate = await db.execute(
+        select(NodeHeartbeat.id).where(NodeHeartbeat.heartbeat_id == heartbeat.heartbeat_id)
+    )
+    if duplicate.first():
+        raise HTTPException(status_code=409, detail="duplicate_heartbeat")
+    latest = await db.execute(
+        select(NodeHeartbeat)
+        .where(NodeHeartbeat.node_id == node.id)
+        .order_by(NodeHeartbeat.sequence.desc())
+        .limit(1)
+    )
+    previous = latest.scalar_one_or_none()
+    if previous and heartbeat.sequence <= previous.sequence:
+        raise HTTPException(status_code=409, detail="non_monotonic_sequence")
+
+    db.add(
+        NodeHeartbeat(
+            heartbeat_id=heartbeat.heartbeat_id,
+            node_id=node.id,
+            sequence=heartbeat.sequence,
+            timestamp=heartbeat.timestamp,
+            software_version=heartbeat.software_version,
+            signature_key_id=heartbeat.signature_key_id,
+            signature=heartbeat.signature,
+            payload_digest=heartbeat.payload_digest,
+            created_at=now,
+        )
+    )
+    node.last_seen_at = heartbeat.timestamp
+    node.software_version = heartbeat.software_version
+    node.health_state = "standby"
+    await db.commit()
+    logger.info("Accepted signed heartbeat node=%s sequence=%s", node.id, heartbeat.sequence)
+    return {"accepted": True, "node_id": heartbeat.node_id, "sequence": heartbeat.sequence}
 
 
 @router.post("/probe-events")

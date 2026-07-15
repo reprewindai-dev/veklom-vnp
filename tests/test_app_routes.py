@@ -19,6 +19,7 @@ def test_canonical_routes_mounted():
     assert "/health" in routes
     assert "/ready" in routes
     assert "/v1/status/capabilities" in routes
+    assert "/api/v1/ingest/heartbeats" in routes
     assert "/api/v1/beacon/topology" in routes
     assert "/api/v1/ingest/probe-events" in routes
     assert "/api/v1/nexus/scores" in routes
