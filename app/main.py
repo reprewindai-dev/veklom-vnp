@@ -198,6 +198,28 @@ def create_app() -> FastAPI:
             }
         }
 
+    @app.get("/api/v1/x402/config")
+    async def get_x402_config():
+        """Proxy BYOS x402 production configuration for the standalone UI."""
+        byos_url = settings.byos_backend_url.rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{byos_url}/api/v1/x402/config")
+            if response.is_success:
+                return response.json()
+            logger.warning(
+                "BYOS x402 config unavailable for standalone VNP: HTTP %s",
+                response.status_code,
+            )
+        except Exception as exc:
+            logger.warning("BYOS x402 config request failed for standalone VNP: %s", exc)
+
+        return {
+            "enabled": False,
+            "missing_config": ["BYOS x402 config proxy unavailable"],
+            "environment_mode": settings.vnp_env,
+        }
+
     frontend_dist = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "frontend", "dist"
     )
