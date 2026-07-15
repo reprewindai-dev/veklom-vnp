@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.db.database import get_db
 from app.db.models import (
     ClaimRequest,
+    Observation,
     ProbeEvent,
     RegionalTelemetry,
     UsageEvent,
@@ -224,8 +225,8 @@ async def get_capabilities(db: AsyncSession = Depends(get_db)) -> CapabilityStat
         for capability_id, model, timestamp_column, required_configuration, reason in (
             (
                 "vnp_physical_probes",
-                ProbeEvent,
-                ProbeEvent.occurred_at,
+                Observation,
+                Observation.completed_at,
                 ["node_keypair", "node_registration", "region_assignment"],
                 "No signed observations received",
             ),
