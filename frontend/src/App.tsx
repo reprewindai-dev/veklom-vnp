@@ -76,8 +76,8 @@ export default function VNPLandingPage() {
           </motion.p>
           
           <motion.div variants={fadeUpVariants} className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a href={`${VEKLOM_URL}/workspace`} className="w-full sm:w-auto px-8 py-4 rounded-lg bg-white text-black font-bold text-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-white/5">
-              Access the Protocol <ArrowRight className="w-5 h-5" />
+            <a href={`${VEKLOM_URL}/vnp/docs`} className="w-full sm:w-auto px-8 py-4 rounded-lg bg-white text-black font-bold text-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-white/5">
+              Open Docs Hub <ArrowRight className="w-5 h-5" />
             </a>
             <a href={`${VEKLOM_URL}/vnp/methodology`} className="w-full sm:w-auto px-8 py-4 rounded-lg bg-white/5 border border-white/10 text-white font-bold text-lg hover:bg-white/10 transition-colors flex items-center justify-center">
               Read the Methodology
