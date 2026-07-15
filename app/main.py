@@ -298,6 +298,14 @@ def create_app() -> FastAPI:
         async def serve_frontend():
             return FileResponse(os.path.join(frontend_dist, "index.html"))
 
+        @app.get("/favicon.svg")
+        async def serve_favicon():
+            return FileResponse(os.path.join(frontend_dist, "favicon.svg"))
+
+        @app.get("/watermark.svg")
+        async def serve_watermark():
+            return FileResponse(os.path.join(frontend_dist, "watermark.svg"))
+
     else:
 
         @app.get("/")
