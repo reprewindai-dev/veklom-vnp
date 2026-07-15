@@ -461,6 +461,7 @@ class Node(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
+    site_code = Column(String(50), unique=True)
     host_reference = Column(String(255))
     physical_location = Column(String(255), nullable=False)
     region_code = Column(String(50), nullable=False, unique=True)
@@ -515,6 +516,7 @@ class Observation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     observation_id = Column(String(100), unique=True, nullable=False)
     node_id = Column(UUID(as_uuid=True), ForeignKey("vnp_nodes.id"), nullable=False)
+    site_code = Column(String(50))
     region = Column(String(50), nullable=False)
     physical_location = Column(String(255), nullable=False)
     target_id = Column(String(200), nullable=False)
@@ -525,20 +527,41 @@ class Observation(Base):
     dns_ms = Column(Integer)
     tcp_ms = Column(Integer)
     tls_ms = Column(Integer)
+    write_ms = Column(Integer)
     ttfb_ms = Column(Integer)
+    body_ms = Column(Integer)
     total_ms = Column(Integer)
     http_status = Column(Integer)
+    http_version = Column(String(20))
+    tls_version = Column(String(50))
+    tls_cipher = Column(String(100))
+    transport_reachable = Column(Boolean, nullable=False, default=False)
+    semantic_assertion = Column(Boolean)
     response_fingerprint = Column(String)
     error_code = Column(String)
+    error_category = Column(String(100))
     sequence = Column(Integer, nullable=False)
     previous_observation_hash = Column(String)
     signature_key_id = Column(String(100), nullable=False)
     signature = Column(String, nullable=False)
+    payload_digest = Column(String(128))
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     __table_args__ = (
         Index("idx_observations_target_region_time", "target_id", "region", "started_at"),
     )
+
+class ObservationRejection(Base):
+    __tablename__ = "vnp_observation_rejections"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    observation_id = Column(String(100), nullable=False, index=True)
+    node_id = Column(UUID(as_uuid=True), nullable=True)
+    signature_key_id = Column(String(100))
+    reason = Column(String(100), nullable=False)
+    payload_digest = Column(String(128), nullable=False)
+    received_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    details = Column(JSONB, nullable=False, default={})
 
 class MeasurementWindow(Base):
     __tablename__ = "vnp_measurement_windows"
