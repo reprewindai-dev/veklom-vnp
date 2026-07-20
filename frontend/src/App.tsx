@@ -1,7 +1,7 @@
 "use client";
 
 import React, { lazy, Suspense } from 'react';
-import { ArrowRight, Activity, Zap, Lock, Cpu, Mail, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Activity, Zap, Lock, Cpu, Mail, ShieldCheck, Shield } from 'lucide-react';
 import { motion } from "framer-motion";
 
 const NetworkTopologyPanel = lazy(() => import('./components/NetworkTopologyPanel'));
@@ -18,6 +18,27 @@ const staggerContainer = {
 
 const VEKLOM_URL = "https://veklom.com";
 const VNP_GITHUB_URL = "https://github.com/reprewindai-dev/veklom-vnp";
+
+type EvidenceState = "Verified" | "Present" | "Needs proof" | "Insufficient Evidence" | "Not started" | "Simulated";
+
+const evidenceMatrix: Array<{ name: string; state: EvidenceState; source: string }> = [
+  { name: "Physical measurements", state: "Present", source: "#network" },
+  { name: "Signed telemetry", state: "Needs proof", source: "#network" },
+  { name: "Route beacons", state: "Present", source: "#network" },
+  { name: "Robust scoring", state: "Insufficient Evidence", source: `${VEKLOM_URL}/vnp/methodology` },
+  { name: "x402 settlement evidence", state: "Needs proof", source: `${VEKLOM_URL}/vnp/x402` },
+  { name: "PGL audit trails", state: "Needs proof", source: `${VEKLOM_URL}/vnp/governance` },
+  { name: "Agent/runtime enforcement", state: "Needs proof", source: `${VEKLOM_URL}/vnp/sdk/fastapi` },
+];
+
+const evidenceStateClass: Record<EvidenceState, string> = {
+  Verified: "text-emerald-300 border-emerald-400/20 bg-emerald-400/10",
+  Present: "text-cyan-300 border-cyan-400/20 bg-cyan-400/10",
+  "Needs proof": "text-amber-300 border-amber-400/20 bg-amber-400/10",
+  "Insufficient Evidence": "text-rose-300 border-rose-400/20 bg-rose-400/10",
+  "Not started": "text-gray-300 border-gray-400/20 bg-gray-400/10",
+  Simulated: "text-violet-300 border-violet-400/20 bg-violet-400/10",
+};
 
 export default function VNPLandingPage() {
   return (
@@ -60,8 +81,8 @@ export default function VNPLandingPage() {
           className="max-w-4xl mx-auto text-center relative z-10"
         >
           <motion.div variants={fadeUpVariants} className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#FFB800]/10 border border-[#FFB800]/20 text-[#FFB800] text-xs font-semibold uppercase tracking-wider mb-8">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            VNP Methodology v1.0
+            <span className="w-2 h-2 rounded-full bg-[#FFB800]" />
+            VNP Methodology v1.0 · Present
           </motion.div>
           
           <motion.h1 variants={fadeUpVariants} className="text-5xl lg:text-7xl font-bold tracking-tight mb-6 leading-tight">
@@ -72,7 +93,7 @@ export default function VNPLandingPage() {
           </motion.h1>
           
           <motion.p variants={fadeUpVariants} className="text-xl text-gray-400 mb-10 max-w-3xl mx-auto leading-relaxed">
-            Autonomous AI agents require absolute deterministic reliability. Standard status pages are marketing tools. The Veklom Nexus Protocol provides mathematical proof of API uptime, latency, and compliance across a decentralized global mesh.
+            Autonomous AI agents need inspectable infrastructure evidence. VNP connects physical measurements, governed execution, and replayable audit without turning missing evidence into a score.
           </motion.p>
           
           <motion.div variants={fadeUpVariants} className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -84,6 +105,41 @@ export default function VNPLandingPage() {
             </a>
           </motion.div>
         </motion.div>
+
+        <div className="max-w-7xl mx-auto mt-20 grid gap-4 md:grid-cols-3">
+          {[
+            {
+              step: "01",
+              title: "Intercept",
+              description: "Capture consequential agent actions before execution.",
+              href: `${VEKLOM_URL}/vnp/sdk/fastapi`,
+              icon: Activity,
+            },
+            {
+              step: "02",
+              title: "Gate",
+              description: "Apply identity, policy, approvals, and governance.",
+              href: `${VEKLOM_URL}/vnp/governance`,
+              icon: Shield,
+            },
+            {
+              step: "03",
+              title: "Anchor",
+              description: "Keep outcomes tied to evidence and replayable audit.",
+              href: "#network",
+              icon: Lock,
+            },
+          ].map(({ step, title, description, href, icon: Icon }) => (
+            <a key={title} href={href} className="card card-hover group p-6">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] tracking-[0.2em] text-[#FFB800]">{step}</span>
+                <Icon className="h-4 w-4 text-gray-500 transition-colors group-hover:text-[#FFB800]" />
+              </div>
+              <h2 className="mt-8 text-xl font-semibold text-white">{title}</h2>
+              <p className="mt-2 text-sm leading-relaxed text-gray-500">{description}</p>
+            </a>
+          ))}
+        </div>
       </section>
 
       {/* Why VNP Section */}
@@ -124,9 +180,9 @@ export default function VNPLandingPage() {
               <div className="w-12 h-12 rounded-xl bg-[#FFB800]/10 flex items-center justify-center border border-[#FFB800]/20 mb-6 group-hover:bg-[#FFB800]/20 group-hover:border-[#FFB800]/40 transition-colors duration-300">
                 <Lock className="w-6 h-6 text-[#FFB800]" />
               </div>
-              <h3 className="text-xl font-bold mb-3">SLA Performance Bonds</h3>
+              <h3 className="text-xl font-bold mb-3">Evidence-aware Routing</h3>
               <p className="text-gray-400 text-sm leading-relaxed">
-                VNP connects real x402 USDC route payments to BYOS settlement evidence, so autonomous clients can route against receipts instead of provider-controlled claims.
+                When settlement evidence is present, autonomous clients can route against receipts instead of provider-controlled claims. Missing evidence stays visible.
               </p>
             </div>
           </div>
@@ -139,28 +195,25 @@ export default function VNPLandingPage() {
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <div className="space-y-8">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FFB800]/10 border border-[#FFB800]/20 text-[#FFB800] text-sm font-medium font-mono">
-                VNP Methodology v1.0 - UPDATED JULY 7
+                VNP Methodology v1.0 · Present
               </div>
               <h2 className="text-4xl font-extrabold tracking-tight leading-tight">
                 VNP v1.0 Verification Stack
               </h2>
               <p className="text-gray-400 text-lg leading-relaxed">
-                To prevent manipulation, VNP evaluates API trust through physical measurements, signed telemetry, route beacons, robust scoring, x402 settlement evidence, PGL audit trails, and agent/runtime enforcement.
+                Evidence is shown with its source and current proof state. Missing measurements remain visible as missing; the landing surface does not manufacture scores, uptime, settlement, or anchor claims.
               </p>
               
               <div className="space-y-4">
-                {[
-                  { name: 'Physical measurements', weight: 'Live' },
-                  { name: 'Signed telemetry', weight: 'Partial' },
-                  { name: 'Route beacons', weight: 'Connected' },
-                  { name: 'Robust scoring', weight: 'Partial' },
-                  { name: 'x402 settlement evidence', weight: 'Connected' },
-                  { name: 'PGL audit trails', weight: 'Connected' },
-                  { name: 'Agent/runtime enforcement', weight: 'Auth Required' }
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center justify-between p-4 rounded-lg bg-white/5 border border-white/10 hover:border-[#FFB800]/30 transition-colors">
+                {evidenceMatrix.map((item) => (
+                  <div key={item.name} className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-[#FFB800]/30">
                     <span className="font-medium text-gray-300">{item.name}</span>
-                    <span className="font-mono text-[#FFB800] font-bold">{item.weight}</span>
+                    <span className="flex items-center gap-3">
+                      <span className={`rounded-full border px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider ${evidenceStateClass[item.state]}`}>
+                        {item.state}
+                      </span>
+                      <a href={item.source} className="text-xs text-gray-500 underline decoration-white/10 underline-offset-4 hover:text-white">Source</a>
+                    </span>
                   </div>
                 ))}
               </div>
@@ -170,11 +223,11 @@ export default function VNPLandingPage() {
               <div className="absolute -inset-4 bg-gradient-to-r from-[#FFB800]/10 to-transparent blur-2xl opacity-50 rounded-3xl -z-10" />
               <div className="border border-white/10 rounded-2xl overflow-hidden bg-[#0A0A0A] shadow-2xl">
                 <div className="p-4 border-b border-white/5 bg-white/[0.02] flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-xs font-mono text-gray-400">CONNECTED VIEW: VNP_TOPOLOGY_MESH</span>
+                  <div className="w-2.5 h-2.5 rounded-full bg-cyan-300" />
+                  <span className="text-xs font-mono text-gray-400">REGISTRY EVIDENCE · SOURCE-BOUND VIEW</span>
                 </div>
                 <div className="h-[500px] overflow-hidden p-6 relative bg-[#060608]">
-                  <div className="transform scale-[0.85] origin-top-left w-[117%] h-[117%] pointer-events-none">
+                  <div className="transform scale-[0.85] origin-top-left w-[117%] h-[117%]">
                     <Suspense fallback={<div className="h-[500px] bg-white/5 rounded-xl animate-pulse" />}>
                       <NetworkTopologyPanel />
                     </Suspense>
@@ -233,7 +286,7 @@ export default function VNPLandingPage() {
               <span className="font-bold text-white font-mono tracking-wider">VEKLOM<span className="text-gray-500">_VNP</span></span>
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-6">
-              The cryptographic standard for M2M API telemetry. Governing the autonomous web with mathematical certainty.
+              A source-bound surface for M2M telemetry, governed execution, and replayable evidence.
             </p>
           </div>
           
