@@ -12,7 +12,7 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/v1': {
-        target: process.env.VITE_CAPPO_BACKEND_URL || 'https://cappo.veklom.com',
+        target: process.env.VITE_CAPPO_BACKEND_URL || 'https://capi.veklom.com',
         changeOrigin: true,
       },
     },

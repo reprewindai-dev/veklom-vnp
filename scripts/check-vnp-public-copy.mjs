@@ -22,6 +22,13 @@ const forbidden = [
   "autonomously slashed",
   "x402 USDC ROUTE PAYMENTS (REAL)",
   "https://docs.veklom.com/vnp",
+  "Signed telemetry', weight: 'Partial'",
+  "Signed telemetry\", weight: \"Partial\"",
+  "Robust scoring', weight: 'Partial'",
+  "Robust scoring\", weight: \"Partial\"",
+  "x402 settlement evidence', weight: 'Connected'",
+  "x402 settlement evidence\", weight: \"Connected\"",
+  "DEMO MODE: VNP_TOPOLOGY_MESH",
 ];
 
 function files(root) {

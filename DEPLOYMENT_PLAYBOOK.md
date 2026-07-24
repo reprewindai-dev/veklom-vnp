@@ -1,11 +1,11 @@
 # Deployment Playbook for VNP Standalone Service (VNP Methodology v1.0)
 
-This will deploy the VNP microservice exactly as configured in this repository (running on Port 8089 and pointing to your live Coolify Postgres database).
+This deploys the standalone VNP service exactly as configured in this repository: FastAPI on port 8089, Vite assets served by the same container, and production data coming from the deployment-managed Coolify PostgreSQL connection.
 
-**1. Secure Copy (SCP) the repository to your Hetzner Server**
+**1. Secure Copy (SCP) the repository to your Hetzner server**
 Run this from your local Windows machine in PowerShell to copy the standalone service to the server:
 ```powershell
-scp -i ~/.ssh/veklom-deploy -r c:\Users\antho\.windsurf\veklom-vnp-standalone root@5.78.135.11:/root/veklom-vnp-standalone
+scp -i ~/.ssh/veklom-deploy -r C:\Users\antho\.windsurf\veklom-vnp root@5.78.135.11:/root/veklom-vnp
 ```
 
 **2. SSH into the Server**
@@ -15,8 +15,8 @@ ssh -i ~/.ssh/veklom-deploy root@5.78.135.11
 
 **3. Build and Start the Service**
 ```bash
-cd /root/veklom-vnp-standalone
-docker-compose up -d --build
+cd /root/veklom-vnp
+docker compose up -d --build
 ```
 
 **4. Verify the Deployment**
@@ -26,9 +26,10 @@ curl http://localhost:8089/health
 ```
 
 Expected Output:
-`{"status": "healthy", "version": "0.1.5", "node_type": "standalone-vnp"}`
+`{"status":"healthy","service":"veklom-vnp","environment":"production","demo_mode":false}`
 
-**Why this is better than the original ZIP file script:**
-- **Real Database Integration:** It natively connects to the exact same PostgreSQL database (`llwfyzhnft87bz6brddiax1z`) as `veklom-byos-backend-2` and `cappo-backend`.
-- **Anti-Gaming Activated:** It includes the 3σ outlier detection we just built.
-- **True WebSockets & SSE:** It natively feeds the real-time VNP leaderboards based on actual DB telemetry rather than mocked random data.
+**Production checks:**
+- **Database-backed only:** production startup refuses missing `DATABASE_URL`.
+- **No demo runtime:** production refuses `VNP_ALLOW_DEMO_DATA=true`.
+- **Live BYOS evidence:** `/v1/status/capabilities` derives VNP capability states from `https://api.veklom.com/api/v1/vnp/methodology` and `https://api.veklom.com/api/v1/beacon/topology`.
+- **Truthful status labels:** unimplemented surfaces remain `Not Yet Wired`, `Partially Implemented`, or `Insufficient Evidence` until their backend evidence exists.

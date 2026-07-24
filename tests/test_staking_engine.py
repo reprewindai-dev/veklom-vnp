@@ -3,6 +3,9 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import ProviderBond, BondState, BondChallenge, ChallengeState
 import uuid
+from conftest import requires_database
+
+pytestmark = requires_database
 
 @pytest.mark.asyncio
 async def test_create_bond_and_fund(client: AsyncClient, db: AsyncSession):

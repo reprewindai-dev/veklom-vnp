@@ -6,6 +6,7 @@ Standalone Veklom Nexus Protocol product surface.
 
 - Main site: `https://veklom.com`
 - VNP entry: `https://veklom.com/vnp`
+- Standalone VNP service: `https://vnp.veklom.com`
 - Developer surface: `https://veklom.dev`
 
 This repo is deployed through Coolify, not Vercel.
@@ -32,7 +33,9 @@ Do not reintroduce stale dimension-count shorthand or locked legacy-spec public 
 The standalone VNP surface talks only to the real implementation backends:
 
 - BYOS backend: `https://api.veklom.com`
-- CAPPO governed runtime backend: `https://cappo.veklom.com`
+- CAPPO governed runtime backend: `https://capi.veklom.com`
+
+The `capi.veklom.com` hostname is the deployed CAPPO runtime surface. The implementation repo remains `reprewindai-dev/cappo-backend`; do not treat `cAPI` as a separate production implementation repo for this system.
 
 Local Vite proxy defaults:
 

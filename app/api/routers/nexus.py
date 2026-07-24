@@ -9,7 +9,8 @@ from sqlalchemy import select, func, and_
 import hashlib
 
 from app.db.database import get_db
-from app.db.models import Api, RegionalTelemetry, ProbeEvent
+from app.core.topology import CANONICAL_LOCATION_CODES
+from app.db.models import Api, RegionalTelemetry, ProbeEvent, Node, NodeHeartbeat
 
 router = APIRouter(prefix="/nexus", tags=["Nexus Protocol"])
 
@@ -178,7 +179,7 @@ async def get_nexus_scores(db: AsyncSession = Depends(get_db)):
             "provider": api_id_str.split("-")[0] if api.name else "Unknown",
             "score": overall,
             "grade": grade,
-            "status": "Connected",
+            "status": "Evidence Verified",
             "dimensions": dimensions,
             "anchorHash": anchor_hash,
             "txHash": tx_hash,
@@ -225,20 +226,90 @@ def _time_ago(dt) -> str:
 
 @router.get("/nodes")
 async def get_nexus_nodes(db: AsyncSession = Depends(get_db)):
-    from app.db.models import ApiRegion
-    stmt = select(ApiRegion).where(ApiRegion.active == True)
+    stmt = select(Node).order_by(Node.region_code)
     result = await db.execute(stmt)
-    regions = result.scalars().all()
+    registered_nodes = result.scalars().all()
     
     nodes = []
-    for idx, r in enumerate(regions):
+    for node in registered_nodes:
+        heartbeat_result = await db.execute(
+            select(func.max(NodeHeartbeat.timestamp)).where(NodeHeartbeat.node_id == node.id)
+        )
+        last_heartbeat = heartbeat_result.scalar_one_or_none()
+        observation_result = await db.execute(
+            select(func.count(ProbeEvent.id)).where(ProbeEvent.worker_region == node.region_code)
+        )
+        observation_count = observation_result.scalar_one()
+        missing_config = [
+            field
+            for field, value in (
+                ("host_reference", getattr(node, "host_reference", None)),
+                ("coolify_application_ref", getattr(node, "coolify_application_ref", None)),
+                ("container_image_digest", getattr(node, "container_image_digest", None)),
+                ("signing_key_id", getattr(node, "signing_key_id", None)),
+            )
+            if not value
+        ]
+        operational_state = (
+            "Live"
+            if not missing_config and last_heartbeat and observation_count > 0
+            else "Config Incomplete"
+            if missing_config
+            else "Insufficient Evidence"
+        )
         nodes.append({
-            "id": r.region_code,
-            "name": f"Node-{idx+1:02d} // {r.region_code.upper()}",
-            "region": r.region_code,
-            "latency": 0, # Will be updated by real probes
+            "id": str(node.id),
+            "host_reference": getattr(node, "host_reference", None),
+            "name": node.name,
+            "region": node.region_code,
+            "location_code": node.region_code,
+            "physical_location": node.physical_location,
+            "jurisdiction": node.jurisdiction,
+            "infrastructure_provider": getattr(node, "infrastructure_provider", "Hetzner"),
+            "deployment_platform": getattr(node, "deployment_platform", "Coolify"),
+            "coolify_application_ref": getattr(node, "coolify_application_ref", None),
+            "container_image_digest": getattr(node, "container_image_digest", None),
+            "software_version": getattr(node, "software_version", None),
+            "signing_key_id": getattr(node, "signing_key_id", None),
+            "key_status": getattr(node, "key_status", "configuration_incomplete"),
+            "last_signed_heartbeat": last_heartbeat.isoformat() if last_heartbeat else None,
+            "health_state": node.health_state,
+            "freshness_state": "fresh" if last_heartbeat else "missing",
+            "registration_status": node.registration_status,
+            "configuration_incomplete": missing_config,
+            "latency": 0,
             "throughput": 0,
-            "status": "active",
-            "activeCycles": 1
+            "status": operational_state,
+            "activeCycles": observation_count,
         })
+
+    missing_location_codes = CANONICAL_LOCATION_CODES - {node.region_code for node in registered_nodes}
+    for location_code in sorted(missing_location_codes):
+        nodes.append(
+            {
+                "id": None,
+                "host_reference": None,
+                "name": location_code,
+                "region": location_code,
+                "location_code": location_code,
+                "physical_location": None,
+                "jurisdiction": None,
+                "infrastructure_provider": "Hetzner",
+                "deployment_platform": "Coolify",
+                "coolify_application_ref": None,
+                "container_image_digest": None,
+                "software_version": None,
+                "signing_key_id": None,
+                "key_status": "configuration_incomplete",
+                "last_signed_heartbeat": None,
+                "health_state": "unknown",
+                "freshness_state": "missing",
+                "registration_status": "configuration_incomplete",
+                "configuration_incomplete": ["node_registration"],
+                "latency": 0,
+                "throughput": 0,
+                "status": "Config Incomplete",
+                "activeCycles": 0,
+            }
+        )
     return nodes

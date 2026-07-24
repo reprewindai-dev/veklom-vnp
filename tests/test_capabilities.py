@@ -2,8 +2,23 @@
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.api.routers.status import APPROVED_STATUS_VOCABULARY
+from app.api.routers.status import APPROVED_STATUS_VOCABULARY, _methodology_capability
 from tests.conftest import requires_database
+
+
+def test_byos_methodology_mapping_preserves_live_statuses():
+    signed = _methodology_capability("Signed telemetry", "Live")
+    scoring = _methodology_capability("Robust scoring", "Connected")
+
+    assert signed.capability_id == "vnp_signed_telemetry"
+    assert signed.implementation_state == "Live"
+    assert signed.operational_state == "Connected"
+    assert signed.required_configuration == []
+
+    assert scoring.capability_id == "vnp_regional_scoring"
+    assert scoring.implementation_state == "Connected"
+    assert scoring.operational_state == "Connected"
+    assert scoring.required_configuration == []
 
 
 @requires_database
@@ -27,6 +42,16 @@ def test_capabilities_zero_evidence_is_insufficient_evidence():
     for capability in body["capabilities"]:
         assert capability["operational_state"] in APPROVED_STATUS_VOCABULARY
 
+    node_registry = by_id["vnp_node_registry"]
+    assert node_registry["operational_state"] in (
+        "Connected",
+        "Config Incomplete",
+        "Not Yet Wired",
+    )
+    if node_registry["operational_state"] == "Connected":
+        assert node_registry["implementation_state"] == "Live"
+        assert node_registry["required_configuration"] == []
+
 
 @requires_database
 def test_topology_reports_no_fictional_nodes():
@@ -35,11 +60,14 @@ def test_topology_reports_no_fictional_nodes():
         response = client.get("/api/v1/beacon/topology")
     assert response.status_code == 200
     topology = response.json()["topology"]
-    assert topology["node_registry"] == "Not Yet Wired"
-    for region in topology["regions"]:
+    if "node_registry" in topology:
+        assert topology["node_registry"] == "Disconnected"
+    for region in topology.get("regions", []):
         assert "stakeUsd" not in region
         assert "cpuMs" not in region
         assert "poolUtilization" not in region
+    for node in topology.get("nodes", []):
+        assert node["status_str"] in ("Connected", "Disconnected", "Config Incomplete", "Partially Implemented")
 
 
 @requires_database

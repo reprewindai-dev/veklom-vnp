@@ -2,6 +2,9 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from uuid import uuid4
 from app.main import app
+from conftest import requires_database
+
+pytestmark = requires_database
 
 @pytest.mark.asyncio
 async def test_vabp_sandbox_start_run():

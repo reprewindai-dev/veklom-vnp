@@ -16,6 +16,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -130,12 +131,25 @@ def create_app() -> FastAPI:
 
     @app.get("/api/v1/beacon/topology")
     async def get_topology(db: AsyncSession = Depends(get_db)):
-        """Truthful topology telemetry derived only from database evidence.
+        """Truthful topology telemetry for the standalone VNP surface.
 
-        The physical node registry with signed heartbeats is not yet wired;
-        until it is, regions are reported from actual probe observations and
-        no fictional node, stake, CPU or pool-utilization values are emitted.
+        BYOS owns the active five-node VNP topology frame. The standalone
+        product surface proxies that source of truth first, then falls back to
+        its local database observations without inventing nodes.
         """
+        byos_url = settings.byos_backend_url.rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{byos_url}/api/v1/beacon/topology")
+            if response.is_success:
+                return response.json()
+            logger.warning(
+                "BYOS topology unavailable for standalone VNP: HTTP %s",
+                response.status_code,
+            )
+        except Exception as exc:
+            logger.warning("BYOS topology request failed for standalone VNP: %s", exc)
+
         rows = (
             await db.execute(
                 select(
@@ -158,18 +172,115 @@ def create_app() -> FastAPI:
 
         return {
             "topology": {
+                "nodes": [],
                 "networkStatus": "ACTIVE" if regions else "INSUFFICIENT_EVIDENCE",
                 "activeRegions": len(regions),
                 "regions": regions,
-                "node_registry": "Not Yet Wired",
+                "eventsLog": [
+                    "BYOS topology unavailable; reporting standalone observation regions only."
+                    if regions
+                    else "BYOS topology unavailable; no standalone region observations recorded."
+                ],
+                "ledgerFeed": [],
+                "totalSettledUsd": 0.0,
+                "activeNodes": 0,
+                "expectedNodes": 5,
+                "isActiveStorm": False,
+                "safetyGuardActive": True,
+                "node_registry": "Disconnected",
                 "securityLevel": "VNP Methodology v1.0",
                 "features": {
                     "signed_probe_ingestion": "Connected",
-                    "node_heartbeats": "Not Yet Wired",
+                    "node_heartbeats": "Disconnected",
                     "vdf_time_lock": "Methodology Target",
                     "zk_snark_ready": "Methodology Target",
                 },
             }
+        }
+
+    @app.get("/api/v1/x402/config")
+    async def get_x402_config():
+        """Proxy BYOS x402 production configuration for the standalone UI."""
+        byos_url = settings.byos_backend_url.rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{byos_url}/api/v1/x402/config")
+            if response.is_success:
+                return response.json()
+            logger.warning(
+                "BYOS x402 config unavailable for standalone VNP: HTTP %s",
+                response.status_code,
+            )
+        except Exception as exc:
+            logger.warning("BYOS x402 config request failed for standalone VNP: %s", exc)
+
+        return {
+            "enabled": False,
+            "missing_config": ["BYOS x402 config proxy unavailable"],
+            "environment_mode": settings.vnp_env,
+        }
+
+    @app.get("/api/vnp.json")
+    async def get_public_vnp_manifest():
+        """Expose the public VNP manifest from backend evidence, not static copy."""
+        byos_url = settings.byos_backend_url.rstrip("/")
+        fallback_stack = [
+            {"section": "Physical measurements", "status": "Disconnected"},
+            {"section": "Signed telemetry", "status": "Disconnected"},
+            {"section": "Route beacons", "status": "Disconnected"},
+            {"section": "Robust scoring", "status": "Disconnected"},
+            {"section": "x402 settlement evidence", "status": "Disconnected"},
+            {"section": "PGL audit trails", "status": "Disconnected"},
+            {
+                "section": "Agent/runtime enforcement",
+                "status": "Auth Required",
+                "backend": "cappo-backend",
+            },
+        ]
+
+        methodology = None
+        topology = None
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                methodology_response = await client.get(
+                    f"{byos_url}/api/v1/vnp/methodology"
+                )
+                if methodology_response.is_success:
+                    methodology = methodology_response.json()
+            except Exception as exc:
+                logger.warning("BYOS methodology manifest request failed: %s", exc)
+
+            try:
+                topology_response = await client.get(f"{byos_url}/api/v1/beacon/topology")
+                if topology_response.is_success:
+                    topology = topology_response.json()
+            except Exception as exc:
+                logger.warning("BYOS topology manifest request failed: %s", exc)
+
+        topology_state = (topology or {}).get("topology") or {}
+        return {
+            "methodology_version": (methodology or {}).get(
+                "methodology", "VNP Methodology v1.0"
+            ),
+            "methodology_url": "https://veklom.com/vnp/methodology",
+            "data_mode": "live" if methodology and topology else "partially_connected",
+            "tagline": (methodology or {}).get(
+                "tagline",
+                "Cryptographic API telemetry for the machine-to-machine economy",
+            ),
+            "verification_stack": (methodology or {}).get("verification_stack")
+            or fallback_stack,
+            "evidence_endpoints": {
+                "methodology": f"{byos_url}/api/v1/vnp/methodology",
+                "topology": f"{byos_url}/api/v1/beacon/topology",
+                "x402_config": f"{byos_url}/api/v1/x402/config",
+            },
+            "topology": {
+                "active_nodes": topology_state.get("activeNodes", 0),
+                "expected_nodes": topology_state.get("expectedNodes", 0),
+                "registered_nodes": topology_state.get("registeredNodes", 0),
+            },
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
     frontend_dist = os.path.join(
@@ -186,6 +297,14 @@ def create_app() -> FastAPI:
         @app.get("/")
         async def serve_frontend():
             return FileResponse(os.path.join(frontend_dist, "index.html"))
+
+        @app.get("/favicon.svg")
+        async def serve_favicon():
+            return FileResponse(os.path.join(frontend_dist, "favicon.svg"))
+
+        @app.get("/watermark.svg")
+        async def serve_watermark():
+            return FileResponse(os.path.join(frontend_dist, "watermark.svg"))
 
     else:
 

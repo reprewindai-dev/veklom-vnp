@@ -6,6 +6,25 @@ import { motion } from "framer-motion";
 
 const NetworkTopologyPanel = lazy(() => import('./components/NetworkTopologyPanel'));
 
+type VerificationStackItem = {
+  section: string;
+  status: string;
+};
+
+type VnpPublicManifest = {
+  verification_stack?: VerificationStackItem[];
+};
+
+const fallbackVerificationStack: VerificationStackItem[] = [
+  { section: 'Physical measurements', status: 'Disconnected' },
+  { section: 'Signed telemetry', status: 'Disconnected' },
+  { section: 'Route beacons', status: 'Disconnected' },
+  { section: 'Robust scoring', status: 'Disconnected' },
+  { section: 'x402 settlement evidence', status: 'Disconnected' },
+  { section: 'PGL audit trails', status: 'Disconnected' },
+  { section: 'Agent/runtime enforcement', status: 'Auth Required' },
+];
+
 const fadeUpVariants = {
   hidden: { opacity: 0, y: 30 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] } }
@@ -16,7 +35,38 @@ const staggerContainer = {
   visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
 };
 
+const VEKLOM_URL = "https://veklom.com";
+const VNP_GITHUB_URL = "https://github.com/reprewindai-dev/veklom-vnp";
+
 export default function VNPLandingPage() {
+  const [verificationStack, setVerificationStack] = React.useState<VerificationStackItem[]>(fallbackVerificationStack);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadVerificationStack() {
+      try {
+        const response = await fetch('/api/vnp.json', {
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+        });
+        if (!response.ok) return;
+        const manifest = (await response.json()) as VnpPublicManifest;
+        if (!cancelled && manifest.verification_stack?.length) {
+          setVerificationStack(manifest.verification_stack);
+        }
+      } catch {
+        // Keep conservative fallback statuses if backend-derived manifest is unavailable.
+      }
+    }
+
+    loadVerificationStack();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <main className="min-h-screen bg-[#0A0A0A] text-white overflow-x-hidden selection:bg-[#FFB800]/30 relative z-10 font-sans">
       
@@ -33,11 +83,11 @@ export default function VNPLandingPage() {
             <a href="#protocol" className="hover:text-white transition-colors">The Protocol</a>
             <a href="#methodology" className="hover:text-white transition-colors">Methodology</a>
             <a href="#network" className="hover:text-white transition-colors">Global Mesh</a>
-            <a href="/vnp/docs" className="hover:text-white transition-colors">Documentation</a>
+            <a href={`${VEKLOM_URL}/vnp/docs`} className="hover:text-white transition-colors">Documentation</a>
           </div>
           <div className="flex items-center gap-6 text-sm font-medium">
-            <a href="/workspace" className="text-gray-400 hover:text-white transition-colors">Access Workspace</a>
-            <a href="/signup" className="bg-white text-black px-4 py-2 rounded-md hover:bg-gray-200 transition-colors">
+            <a href={`${VEKLOM_URL}/workspace`} className="text-gray-400 hover:text-white transition-colors">Access Workspace</a>
+            <a href={`${VEKLOM_URL}/signup`} className="bg-white text-black px-4 py-2 rounded-md hover:bg-gray-200 transition-colors">
               Deploy Agent
             </a>
           </div>
@@ -61,10 +111,10 @@ export default function VNPLandingPage() {
             VNP Methodology v1.0
           </motion.div>
           
-          <motion.h1 variants={fadeUpVariants} className="text-5xl lg:text-7xl font-bold tracking-tight mb-6 leading-tight">
-            Cryptographically Verifiable <br />
+          <motion.h1 variants={fadeUpVariants} className="max-w-4xl mx-auto text-4xl sm:text-5xl lg:text-7xl font-bold tracking-tight mb-6 leading-tight text-balance">
+            Cryptographic <br className="hidden sm:block" />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-[#FFE6A8] to-[#FFB800]">
-              Telemetry for the M2M Economy.
+              API telemetry for the M2M Economy.
             </span>
           </motion.h1>
           
@@ -73,10 +123,10 @@ export default function VNPLandingPage() {
           </motion.p>
           
           <motion.div variants={fadeUpVariants} className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a href="/workspace" className="w-full sm:w-auto px-8 py-4 rounded-lg bg-white text-black font-bold text-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-white/5">
-              Access the Protocol <ArrowRight className="w-5 h-5" />
+            <a href={`${VEKLOM_URL}/vnp/docs`} className="w-full sm:w-auto px-8 py-4 rounded-lg bg-white text-black font-bold text-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-white/5">
+              Open Docs Hub <ArrowRight className="w-5 h-5" />
             </a>
-            <a href="#methodology" className="w-full sm:w-auto px-8 py-4 rounded-lg bg-white/5 border border-white/10 text-white font-bold text-lg hover:bg-white/10 transition-colors flex items-center justify-center">
+            <a href={`${VEKLOM_URL}/vnp/methodology`} className="w-full sm:w-auto px-8 py-4 rounded-lg bg-white/5 border border-white/10 text-white font-bold text-lg hover:bg-white/10 transition-colors flex items-center justify-center">
               Read the Methodology
             </a>
           </motion.div>
@@ -146,29 +196,21 @@ export default function VNPLandingPage() {
               </p>
               
               <div className="space-y-4">
-                {[
-                  { name: 'Physical measurements', weight: 'Live' },
-                  { name: 'Signed telemetry', weight: 'Partial' },
-                  { name: 'Route beacons', weight: 'Connected' },
-                  { name: 'Robust scoring', weight: 'Partial' },
-                  { name: 'x402 settlement evidence', weight: 'Connected' },
-                  { name: 'PGL audit trails', weight: 'Connected' },
-                  { name: 'Agent/runtime enforcement', weight: 'Auth Required' }
-                ].map((item, i) => (
+                {verificationStack.map((item, i) => (
                   <div key={i} className="flex items-center justify-between p-4 rounded-lg bg-white/5 border border-white/10 hover:border-[#FFB800]/30 transition-colors">
-                    <span className="font-medium text-gray-300">{item.name}</span>
-                    <span className="font-mono text-[#FFB800] font-bold">{item.weight}</span>
+                    <span className="font-medium text-gray-300">{item.section}</span>
+                    <span className="font-mono text-[#FFB800] font-bold">{item.status}</span>
                   </div>
                 ))}
               </div>
             </div>
             
-            <div className="relative">
+            <div id="network" className="relative scroll-mt-24">
               <div className="absolute -inset-4 bg-gradient-to-r from-[#FFB800]/10 to-transparent blur-2xl opacity-50 rounded-3xl -z-10" />
               <div className="border border-white/10 rounded-2xl overflow-hidden bg-[#0A0A0A] shadow-2xl">
                 <div className="p-4 border-b border-white/5 bg-white/[0.02] flex items-center gap-2">
                   <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-xs font-mono text-gray-400">CONNECTED VIEW: VNP_TOPOLOGY_MESH</span>
+                  <span className="text-xs font-mono text-gray-400">BACKEND VIEW: VNP_TOPOLOGY_MESH</span>
                 </div>
                 <div className="h-[500px] overflow-hidden p-6 relative bg-[#060608]">
                   <div className="transform scale-[0.85] origin-top-left w-[117%] h-[117%] pointer-events-none">
@@ -213,7 +255,7 @@ export default function VNPLandingPage() {
             </div>
           </div>
 
-          <a href="/vnp/claim" className="inline-flex px-10 py-5 rounded-lg bg-white text-black font-bold text-lg hover:bg-gray-200 transition-colors items-center gap-2 shadow-lg shadow-white/5">
+          <a href={`${VEKLOM_URL}/vnp/claim`} className="inline-flex px-10 py-5 rounded-lg bg-white text-black font-bold text-lg hover:bg-gray-200 transition-colors items-center gap-2 shadow-lg shadow-white/5">
             Submit API for VNP Evaluation <Zap className="w-5 h-5" />
           </a>
         </div>
@@ -237,30 +279,30 @@ export default function VNPLandingPage() {
           <div>
             <h4 className="font-bold mb-4 text-gray-300">Protocol</h4>
             <ul className="space-y-3">
-              <li><a href="/vnp/docs/methodology" className="hover:text-white transition-colors">VNP Methodology v1.0</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Governance Charter</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Slashing Mechanics</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">x402 Settlement</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/methodology`} className="hover:text-white transition-colors">VNP Methodology v1.0</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/governance`} className="hover:text-white transition-colors">Governance Charter</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/slashing`} className="hover:text-white transition-colors">Slashing Mechanics</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/x402`} className="hover:text-white transition-colors">x402 Settlement</a></li>
             </ul>
           </div>
           
           <div>
             <h4 className="font-bold mb-4 text-gray-300">Developers</h4>
             <ul className="space-y-3">
-              <li><a href="#" className="hover:text-white transition-colors">Documentation</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Python Probe SDK</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">FastAPI Integration</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">GitHub Repository</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/docs`} className="hover:text-white transition-colors">Documentation</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/sdk/python`} className="hover:text-white transition-colors">Python Probe SDK</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/sdk/fastapi`} className="hover:text-white transition-colors">FastAPI Integration</a></li>
+              <li><a href={VNP_GITHUB_URL} className="hover:text-white transition-colors">GitHub Repository</a></li>
             </ul>
           </div>
           
           <div>
             <h4 className="font-bold mb-4 text-gray-300">Network</h4>
             <ul className="space-y-3">
-              <li><a href="#" className="hover:text-white transition-colors">Global Topology Map</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Node Operator Guide</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">API Directory</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Status & Uptime</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/topology`} className="hover:text-white transition-colors">Global Topology Map</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/operators`} className="hover:text-white transition-colors">Node Operator Guide</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/directory`} className="hover:text-white transition-colors">API Directory</a></li>
+              <li><a href={`${VEKLOM_URL}/vnp/status`} className="hover:text-white transition-colors">Status & Uptime</a></li>
             </ul>
           </div>
         </div>
