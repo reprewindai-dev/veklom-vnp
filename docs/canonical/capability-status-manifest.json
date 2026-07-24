@@ -1,0 +1,38 @@
+{
+  "version": "2026-07-13",
+  "repository": "reprewindai-dev/veklom-vnp",
+  "authority_role": "physical_measurement_and_assurance",
+  "owns": [
+    "signed_physical_telemetry",
+    "canonical_five_node_registry",
+    "signed_heartbeats",
+    "operational_measurements",
+    "five_node_state_compiler",
+    "evidence_confidence",
+    "performance_assurance_inputs"
+  ],
+  "does_not_own": [
+    "trust_connection_persistence",
+    "final_consequential_execution_authority",
+    "unrestricted_wallet_control",
+    "direct_slashing",
+    "benchmark_certification"
+  ],
+  "status_namespaces": [
+    "readiness_status",
+    "connection_state",
+    "execution_state",
+    "policy_decision",
+    "measurement_state",
+    "settlement_stage",
+    "verification_result"
+  ],
+  "canonical_nodes": [
+    {"id": "veklom-edge-us-east", "location_code": "us-ashburn", "city": "Ashburn", "country": "United States", "provider": "Hetzner", "orchestrator": "Coolify"},
+    {"id": "veklom-prod-1", "location_code": "us-hillsboro", "city": "Hillsboro", "country": "United States", "provider": "Hetzner", "orchestrator": "Coolify"},
+    {"id": "veklom-edge-eu-north2", "location_code": "de-nuremberg", "city": "Nuremberg", "country": "Germany", "provider": "Hetzner", "orchestrator": "Coolify"},
+    {"id": "veklom-edge-eu-central", "location_code": "de-falkenstein", "city": "Falkenstein", "country": "Germany", "provider": "Hetzner", "orchestrator": "Coolify"},
+    {"id": "veklom-edge-ap-southeast", "location_code": "sg-singapore", "city": "Singapore", "country": "Singapore", "provider": "Hetzner", "orchestrator": "Coolify"}
+  ],
+  "liveness_rule": "A physical server is not Live until registration, verified signing key, fresh heartbeat, deployed probe software, at least one accepted real observation, and freshness criteria are satisfied."
+}
